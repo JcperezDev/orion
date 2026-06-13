@@ -182,8 +182,116 @@ fn test_catalog_provider_kind() {
     ));
 
     let google = catalog.get_provider("google").unwrap();
-    assert!(matches!(
-        google.kind,
-        orion_agent::models::ProviderKind::Google
-    ));
+    assert!(
+        matches!(
+            google.kind,
+            orion_agent::models::ProviderKind::OpenAICompatible
+        ),
+        "Google should be OpenAICompatible, not Google"
+    );
+}
+
+#[test]
+fn test_google_provider_base_url() {
+    let catalog = ModelCatalog::new().expect("Failed to create catalog");
+    let google = catalog.get_provider("google").unwrap();
+
+    let expected_url = "https://generativelanguage.googleapis.com/v1beta/openai";
+    assert_eq!(
+        google.base_url.as_deref(),
+        Some(expected_url),
+        "Google should use OpenAI-compatible endpoint"
+    );
+}
+
+#[test]
+fn test_all_openai_compatible_providers_have_base_urls() {
+    let catalog = ModelCatalog::new().expect("Failed to create catalog");
+    let providers = catalog.list_providers();
+
+    let openai_compat_kinds = vec![
+        "deepseek",
+        "groq",
+        "mistral",
+        "together",
+        "perplexity",
+        "minimax",
+        "google",
+        "qwen",
+    ];
+
+    for id in openai_compat_kinds {
+        let provider = providers.iter().find(|p| p.id == id);
+        assert!(provider.is_some(), "Provider {} should exist", id);
+        let p = provider.unwrap();
+        assert!(
+            p.base_url.is_some() && !p.base_url.as_ref().unwrap().is_empty(),
+            "Provider {} should have a base_url",
+            id
+        );
+    }
+}
+
+#[test]
+fn test_provider_requires_api_key() {
+    let catalog = ModelCatalog::new().expect("Failed to create catalog");
+
+    let providers_requiring_key = vec![
+        ("deepseek", "DEEPSEEK_API_KEY"),
+        ("groq", "GROQ_API_KEY"),
+        ("mistral", "MISTRAL_API_KEY"),
+        ("together", "TOGETHER_API_KEY"),
+        ("perplexity", "PERPLEXITY_API_KEY"),
+        ("minimax", "MINIMAX_API_KEY"),
+        ("google", "GOOGLE_API_KEY"),
+    ];
+
+    for (id, expected_env) in providers_requiring_key {
+        let provider = catalog.get_provider(id).unwrap();
+        assert_eq!(
+            provider.api_key_env.as_deref(),
+            Some(expected_env),
+            "{} should require {}",
+            id,
+            expected_env
+        );
+    }
+}
+
+#[test]
+fn test_sync_openrouter_missing_key_returns_error() {
+    use orion_agent::models::sync;
+
+    let catalog = ModelCatalog::new().expect("Failed to create catalog");
+
+    env_remove("OPENROUTER_API_KEY");
+
+    let result = sync::sync_providers(&catalog);
+    assert!(
+        result.is_err(),
+        "sync_providers should fail when OPENROUTER_API_KEY is missing"
+    );
+    let err_msg = result.unwrap_err().to_string();
+    assert!(
+        err_msg.contains("OPENROUTER_API_KEY"),
+        "Error should mention missing API key: {}",
+        err_msg
+    );
+}
+
+#[test]
+fn test_models_list_empty_returns_message() {
+    let catalog = ModelCatalog::new().expect("Failed to create catalog");
+    let models = catalog.list_models(None);
+    assert!(models.is_empty(), "Models should be empty before sync");
+
+    let provider_models = catalog.list_models(Some("deepseek"));
+    assert!(
+        provider_models.is_empty(),
+        "Deepseek models should be empty before sync"
+    );
+}
+
+fn env_remove(key: &str) {
+    std::env::remove_var(key);
 }

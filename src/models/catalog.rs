@@ -294,9 +294,9 @@ impl ModelCatalog {
             ),
             (
                 "google",
-                "Google AI",
-                "google",
-                "https://generativelanguage.googleapis.com/v1beta",
+                "Google Gemini",
+                "openai_compatible",
+                "https://generativelanguage.googleapis.com/v1beta/openai",
                 Some("GOOGLE_API_KEY"),
                 true,
                 true,

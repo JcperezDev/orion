@@ -1,5 +1,5 @@
 use crate::models::ModelCatalog;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 
 pub fn sync_providers(catalog: &ModelCatalog) -> Result<()> {
     sync_openrouter(catalog)?;
@@ -7,19 +7,43 @@ pub fn sync_providers(catalog: &ModelCatalog) -> Result<()> {
 }
 
 pub fn sync_openrouter(catalog: &ModelCatalog) -> Result<()> {
-    let client = reqwest::blocking::Client::new();
-    let api_key = std::env::var("OPENROUTER_API_KEY").unwrap_or_default();
+    let api_key = match std::env::var("OPENROUTER_API_KEY") {
+        Ok(key) if !key.is_empty() => key,
+        _ => {
+            return Err(anyhow!(
+                "OpenRouter sync skipped: missing OPENROUTER_API_KEY"
+            ));
+        }
+    };
 
+    let client = reqwest::blocking::Client::new();
     let resp = client
         .get("https://openrouter.ai/api/v1/models")
         .header("Authorization", format!("Bearer {}", api_key))
-        .send()?;
+        .send()
+        .map_err(|e| anyhow!("OpenRouter request failed: {}", e))?;
 
     if !resp.status().is_success() {
-        return Ok(());
+        let status = resp.status();
+        return Err(anyhow!(
+            "OpenRouter API error ({}): sync failed. Your API key may be invalid or expired.",
+            status
+        ));
     }
 
-    let data: serde_json::Value = resp.json()?;
+    let data: serde_json::Value = resp
+        .json()
+        .map_err(|e| anyhow!("Failed to parse OpenRouter response: {}", e))?;
+
+    let models_added = process_models(catalog, &data)?;
+    println!("Synced {} models from OpenRouter.", models_added);
+
+    Ok(())
+}
+
+fn process_models(catalog: &ModelCatalog, data: &serde_json::Value) -> Result<usize> {
+    let mut count = 0;
+
     catalog.update_provider_sync_time("openrouter")?;
 
     if let Some(models) = data.get("data").and_then(|d| d.as_array()) {
@@ -82,8 +106,9 @@ pub fn sync_openrouter(catalog: &ModelCatalog) -> Result<()> {
             attrs.push(("supports_vision", supports_vision.to_string()));
 
             catalog.upsert_model(provider_id, model_id, name, &attrs)?;
+            count += 1;
         }
     }
 
-    Ok(())
+    Ok(count)
 }

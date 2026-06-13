@@ -104,6 +104,13 @@ impl Agent {
 
     fn list_providers(&self) {
         let providers = self.catalog.list_providers();
+
+        eprintln!(
+            "{:<14} {:<18} {:<22} {}",
+            "provider", "kind", "api_key", "status"
+        );
+        eprintln!("{:-<14} {:-<18} {:-<22} {}", "", "", "", "");
+
         for provider in providers {
             let status = if provider.enabled {
                 "enabled"
@@ -111,89 +118,111 @@ impl Agent {
                 "disabled"
             };
 
-            let api_key_status = if let Some(env_var) = &provider.api_key_env {
+            let api_key_str = provider.api_key_env.as_deref().unwrap_or("none");
+
+            let key_status = if let Some(env_var) = &provider.api_key_env {
                 if std::env::var(env_var).is_ok() {
-                    "API key set"
+                    "ready"
                 } else {
-                    "MISSING API key"
+                    "missing_key"
                 }
             } else {
-                "no API key required"
+                "ready"
+            };
+
+            let final_status = if !provider.enabled {
+                "disabled".to_string()
+            } else {
+                format!("{}/{}", key_status, status)
             };
 
             eprintln!(
-                "  {} ({}) - {} [{}]",
-                provider.name, provider.id, status, api_key_status
+                "{:<14} {:<18} {:<22} {}",
+                provider.id,
+                provider.kind.as_str(),
+                api_key_str,
+                final_status
             );
-            if let Some(url) = &provider.base_url {
-                eprintln!("    base_url: {}", url);
-            }
         }
     }
 
     fn list_providers_detailed(&self) {
         let providers = self.catalog.list_providers();
+
         eprintln!("Provider Status:");
+        eprintln!(
+            "{:<12} {:<10} {:<20} {:<10} {:>6} {}",
+            "provider", "enabled", "api_key", "loaded", "models", "capabilities"
+        );
+        eprintln!(
+            "{:-<12} {:-<10} {:-<20} {:-<10} {:->6} {}",
+            "", "", "", "", "", ""
+        );
+
         for provider in providers {
-            let enabled_str = if provider.enabled {
-                "enabled"
-            } else {
-                "disabled"
-            };
+            let enabled_str = if provider.enabled { "yes" } else { "no" };
             let loaded = self.registry.is_available(&provider.id);
+            let loaded_str = if loaded { "yes" } else { "no" };
 
             let api_key_status = if let Some(env_var) = &provider.api_key_env {
                 if std::env::var(env_var).is_ok() {
-                    "✓ API key set"
+                    format!("{}/set", env_var)
                 } else {
-                    "✗ MISSING API key"
+                    format!("{}/MISSING", env_var)
                 }
             } else {
-                "— no API key required"
+                "none".to_string()
             };
 
-            let loaded_str = if loaded {
-                "✓ loaded"
-            } else {
-                "✗ not loaded"
-            };
+            let model_count = self.catalog.list_models(Some(&provider.id)).len();
 
-            eprintln!(
-                "  {}: {} | {} | {}",
-                provider.id, enabled_str, api_key_status, loaded_str
-            );
-            eprintln!(
-                "    {} | streaming:{} | tools:{} | vision:{}",
-                provider.kind.as_str(),
+            let caps = format!(
+                "s:{}/t:{}/v:{}",
                 if provider.supports_streaming {
-                    "✓"
+                    "Y"
                 } else {
-                    "✗"
+                    "N"
                 },
-                if provider.supports_tools {
-                    "✓"
-                } else {
-                    "✗"
-                },
-                if provider.supports_vision {
-                    "✓"
-                } else {
-                    "✗"
-                }
+                if provider.supports_tools { "Y" } else { "N" },
+                if provider.supports_vision { "Y" } else { "N" }
             );
+
+            eprintln!(
+                "{:<12} {:<10} {:<20} {:<10} {:>6} {}",
+                provider.id, enabled_str, api_key_status, loaded_str, model_count, caps
+            );
+
+            if let Some(url) = &provider.base_url {
+                eprintln!("           base_url: {}", url);
+            }
         }
     }
 
     fn sync_providers(&self) {
-        if let Err(e) = crate::models::sync::sync_providers(&self.catalog) {
-            eprintln!("Sync failed: {}", e);
-        } else {
-            eprintln!("Sync complete");
+        match crate::models::sync::sync_providers(&self.catalog) {
+            Ok(_) => {}
+            Err(e) => {
+                eprintln!("{}", e);
+            }
         }
     }
 
     fn list_models(&self, provider_id: Option<&str>) {
         let models = self.catalog.list_models(provider_id);
+
+        if models.is_empty() {
+            if let Some(pid) = provider_id {
+                eprintln!(
+                    "Provider '{}' registered, but no models available yet.",
+                    pid
+                );
+                eprintln!("Run `/providers sync` to fetch models from OpenRouter.");
+            } else {
+                eprintln!("No models loaded yet. Run `/providers sync` or configure static catalog entries.");
+            }
+            return;
+        }
+
         for model in models.iter().take(20) {
             eprintln!("  {} ({})", model.full_id(), model.display_name);
         }
@@ -204,6 +233,13 @@ impl Agent {
 
     fn search_models(&self, query: &str) {
         let models = self.catalog.search(query);
+
+        if models.is_empty() {
+            eprintln!("No models found matching '{}'.", query);
+            eprintln!("Try `/providers sync` to fetch latest models from OpenRouter.");
+            return;
+        }
+
         for model in models {
             eprintln!("  {} ({})", model.full_id(), model.display_name);
         }
@@ -211,15 +247,37 @@ impl Agent {
 
     fn list_vision_models(&self) {
         let models = self.catalog.list_models(None);
-        for model in models.into_iter().filter(|m| m.supports_vision).take(20) {
+        let vision: Vec<_> = models.into_iter().filter(|m| m.supports_vision).collect();
+
+        if vision.is_empty() {
+            eprintln!("No vision models available yet.");
+            eprintln!("Run `/providers sync` to fetch models from OpenRouter.");
+            return;
+        }
+
+        for model in vision.iter().take(20) {
             eprintln!("  {} - vision", model.full_id());
+        }
+        if vision.len() > 20 {
+            eprintln!("  ... and {} more", vision.len() - 20);
         }
     }
 
     fn list_tool_models(&self) {
         let models = self.catalog.list_models(None);
-        for model in models.into_iter().filter(|m| m.supports_tools).take(20) {
+        let tools: Vec<_> = models.into_iter().filter(|m| m.supports_tools).collect();
+
+        if tools.is_empty() {
+            eprintln!("No models with tool calling available yet.");
+            eprintln!("Run `/providers sync` to fetch models from OpenRouter.");
+            return;
+        }
+
+        for model in tools.iter().take(20) {
             eprintln!("  {} - tools", model.full_id());
+        }
+        if tools.len() > 20 {
+            eprintln!("  ... and {} more", tools.len() - 20);
         }
     }
 
@@ -237,6 +295,42 @@ impl Agent {
             eprintln!("Model set to: {}", model.full_id());
         } else {
             eprintln!("Model not found: {}", model_spec);
+
+            let parts: Vec<&str> = model_spec.splitn(2, ':').collect();
+            if parts.len() == 2 {
+                let provider_id = parts[0];
+                let search_term = parts[1];
+
+                let provider_models: Vec<_> = self
+                    .catalog
+                    .list_models(Some(provider_id))
+                    .into_iter()
+                    .filter(|m| m.model_id.contains(search_term))
+                    .take(5)
+                    .collect();
+
+                if !provider_models.is_empty() {
+                    eprintln!("\nSuggestions from provider '{}':", provider_id);
+                    for m in provider_models {
+                        eprintln!("  /model {}", m.full_id());
+                    }
+                } else {
+                    eprintln!("\nNo models found for provider '{}'. Try `/models list {}` to see available models.", provider_id, provider_id);
+                }
+            } else {
+                let all_models: Vec<_> =
+                    self.catalog.list_models(None).into_iter().take(5).collect();
+
+                if all_models.is_empty() {
+                    eprintln!("\nNo models in catalog. Run `/providers sync` first.");
+                } else {
+                    eprintln!("\nAvailable models:");
+                    for m in all_models {
+                        eprintln!("  /model {}", m.full_id());
+                    }
+                    eprintln!("\nOr try `/models search {}` to find models.", model_spec);
+                }
+            }
         }
     }
 

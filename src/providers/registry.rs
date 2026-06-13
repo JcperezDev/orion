@@ -33,18 +33,22 @@ impl ProviderRegistry {
             }
 
             let provider: Option<Arc<dyn LlmProvider>> = match info.kind {
-                ProviderKind::OpenAICompatible => {
+                ProviderKind::OpenAICompatible | ProviderKind::Google | ProviderKind::Custom => {
                     let base_url = info.base_url.as_ref().map(|s| s.as_str()).unwrap_or("");
                     let api_key = info
                         .api_key_env
                         .as_ref()
                         .and_then(|k| std::env::var(k).ok())
                         .unwrap_or_default();
-                    Some(Arc::new(OpenAICompatibleProvider::new(
-                        info.id.as_str(),
-                        base_url,
-                        &api_key,
-                    )) as Arc<dyn LlmProvider>)
+                    if !base_url.is_empty() {
+                        Some(Arc::new(OpenAICompatibleProvider::new(
+                            info.id.as_str(),
+                            base_url,
+                            &api_key,
+                        )) as Arc<dyn LlmProvider>)
+                    } else {
+                        None
+                    }
                 }
                 ProviderKind::Anthropic => {
                     let api_key = info
@@ -61,23 +65,6 @@ impl ProviderRegistry {
                         .map(|s| s.as_str())
                         .unwrap_or("http://localhost:11434");
                     Some(Arc::new(OllamaProvider::new(base_url)) as Arc<dyn LlmProvider>)
-                }
-                ProviderKind::Google | ProviderKind::Custom => {
-                    let base_url = info.base_url.as_ref().map(|s| s.as_str()).unwrap_or("");
-                    let api_key = info
-                        .api_key_env
-                        .as_ref()
-                        .and_then(|k| std::env::var(k).ok())
-                        .unwrap_or_default();
-                    if !base_url.is_empty() {
-                        Some(Arc::new(OpenAICompatibleProvider::new(
-                            info.id.as_str(),
-                            base_url,
-                            &api_key,
-                        )) as Arc<dyn LlmProvider>)
-                    } else {
-                        None
-                    }
                 }
             };
 
