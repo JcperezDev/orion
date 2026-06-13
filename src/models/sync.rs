@@ -3,7 +3,112 @@ use anyhow::{anyhow, Result};
 
 pub fn sync_providers(catalog: &ModelCatalog) -> Result<()> {
     sync_openrouter(catalog)?;
+    if let Err(e) = sync_models_dev(catalog) {
+        eprintln!("Models.dev sync failed (non-fatal): {}", e);
+    }
     Ok(())
+}
+
+pub fn sync_models_dev(catalog: &ModelCatalog) -> Result<()> {
+    let client = reqwest::blocking::Client::new();
+    let resp = client
+        .get("https://models.dev/api/v1/models")
+        .send()
+        .map_err(|e| anyhow!("Models.dev request failed: {}", e))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        return Err(anyhow!("Models.dev API error ({}): sync failed.", status));
+    }
+
+    let data: serde_json::Value = resp
+        .json()
+        .map_err(|e| anyhow!("Failed to parse Models.dev response: {}", e))?;
+
+    let models_added = process_models_dev(catalog, &data)?;
+    println!("Synced {} models from Models.dev.", models_added);
+
+    catalog.update_source_sync("models_dev", &chrono::Utc::now().to_rfc3339(), None)?;
+
+    Ok(())
+}
+
+fn process_models_dev(catalog: &ModelCatalog, data: &serde_json::Value) -> Result<usize> {
+    let mut count = 0;
+
+    if let Some(models) = data.get("models").and_then(|m| m.as_array()) {
+        for model in models {
+            let id = model.get("id").and_then(|v| v.as_str()).unwrap_or("");
+            let name = model.get("name").and_then(|v| v.as_str()).unwrap_or(id);
+            let display_name = model
+                .get("display_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or(name);
+
+            let parts: Vec<&str> = id.splitn(2, '/').collect();
+            let provider_id = if parts.len() == 2 {
+                parts[0]
+            } else {
+                "models_dev"
+            };
+            let model_id = if parts.len() == 2 { parts[1] } else { id };
+
+            let context_window = model
+                .get("context_length")
+                .or_else(|| model.get("context_window"))
+                .and_then(|v| v.as_u64())
+                .map(|v| v as u32);
+
+            let input_price = model
+                .get("pricing")
+                .and_then(|p| p.get("prompt"))
+                .and_then(|v| v.as_str())
+                .and_then(|s| s.parse::<f64>().ok())
+                .map(|p| p * 1_000_000.0);
+
+            let output_price = model
+                .get("pricing")
+                .and_then(|p| p.get("completion"))
+                .and_then(|v| v.as_str())
+                .and_then(|s| s.parse::<f64>().ok())
+                .map(|p| p * 1_000_000.0);
+
+            let supports_vision = id.contains("vision")
+                || id.contains("claude")
+                || id.contains("gpt")
+                || id.contains("gemini");
+
+            let is_free = model
+                .get("is_free")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let is_local = model
+                .get("is_local")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+
+            let mut attrs: Vec<(&str, String)> = Vec::new();
+            attrs.push(("source", "models_dev".to_string()));
+
+            if let Some(v) = context_window {
+                attrs.push(("context_window", v.to_string()));
+            }
+            if let Some(v) = input_price {
+                attrs.push(("input_price", v.to_string()));
+            }
+            if let Some(v) = output_price {
+                attrs.push(("output_price", v.to_string()));
+            }
+            attrs.push(("supports_vision", supports_vision.to_string()));
+            attrs.push(("is_free", is_free.to_string()));
+            attrs.push(("is_local", is_local.to_string()));
+
+            catalog.upsert_model(provider_id, model_id, display_name, &attrs)?;
+            count += 1;
+        }
+    }
+
+    Ok(count)
 }
 
 pub fn sync_openrouter(catalog: &ModelCatalog) -> Result<()> {
