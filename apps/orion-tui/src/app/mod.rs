@@ -1,7 +1,7 @@
 pub mod event;
 pub mod update;
 
-use crate::config::Config;
+use orion_core::config::Config;
 use crate::ui::chat::Message;
 use anyhow::Result;
 use chrono::Utc;

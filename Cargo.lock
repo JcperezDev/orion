@@ -1595,14 +1595,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 
 [[package]]
-name = "orion-agent"
+name = "orion-core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "arboard",
  "async-trait",
  "chrono",
- "crossterm",
  "dirs",
  "futures",
  "image",
@@ -1610,7 +1609,6 @@ dependencies = [
  "notify",
  "once_cell",
  "parking_lot",
- "ratatui",
  "reqwest",
  "rusqlite",
  "serde",
@@ -1621,6 +1619,18 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
+]
+
+[[package]]
+name = "orion-tui"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "crossterm",
+ "orion-core",
+ "ratatui",
+ "tokio",
 ]
 
 [[package]]

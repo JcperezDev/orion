@@ -1,10 +1,18 @@
-[package]
-name = "orion-agent"
+[workspace]
+resolver = "2"
+members = [
+    "crates/orion-core",
+    "apps/orion-tui",
+]
+default-member = "crates/orion-core"
+
+[workspace.package]
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.75"
+authors = ["ORION Team"]
 
-[dependencies]
+[workspace.dependencies]
 ratatui = { version = "0.26", features = ["serde"] }
 crossterm = { version = "0.27", features = ["serde"] }
 tokio = { version = "1", features = ["full"] }

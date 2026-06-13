@@ -1,12 +1,4 @@
-mod analytics;
 mod app;
-mod config;
-mod core;
-mod images;
-mod mcp;
-mod models;
-mod providers;
-mod router;
 mod ui;
 
 use anyhow::Result;
@@ -15,8 +7,8 @@ use ratatui::Terminal;
 
 use app::event::{EventType, InputEvent};
 use app::{App, EventLoop};
-use config::Config;
-use core::agent::Agent;
+use orion_core::config::Config;
+use orion_core::core::agent::Agent;
 
 pub struct Orion {
     pub app: App,

@@ -1,4 +1,4 @@
-use orion_agent::models::ModelCatalog;
+use orion_core::models::ModelCatalog;
 
 fn env_remove(key: &str) {
     std::env::remove_var(key);
@@ -170,26 +170,26 @@ fn test_catalog_provider_kind() {
     let anthropic = catalog.get_provider("anthropic").unwrap();
     assert!(matches!(
         anthropic.kind,
-        orion_agent::models::ProviderKind::Anthropic
+        orion_core::models::ProviderKind::Anthropic
     ));
 
     let openrouter = catalog.get_provider("openrouter").unwrap();
     assert!(matches!(
         openrouter.kind,
-        orion_agent::models::ProviderKind::OpenAICompatible
+        orion_core::models::ProviderKind::OpenAICompatible
     ));
 
     let ollama = catalog.get_provider("ollama").unwrap();
     assert!(matches!(
         ollama.kind,
-        orion_agent::models::ProviderKind::Ollama
+        orion_core::models::ProviderKind::Ollama
     ));
 
     let google = catalog.get_provider("google").unwrap();
     assert!(
         matches!(
             google.kind,
-            orion_agent::models::ProviderKind::OpenAICompatible
+            orion_core::models::ProviderKind::OpenAICompatible
         ),
         "Google should be OpenAICompatible, not Google"
     );
@@ -264,7 +264,7 @@ fn test_provider_requires_api_key() {
 
 #[test]
 fn test_sync_openrouter_missing_key_returns_error() {
-    use orion_agent::models::sync;
+    use orion_core::models::sync;
 
     let catalog = ModelCatalog::new().expect("Failed to create catalog");
 
@@ -354,7 +354,7 @@ fn test_get_model_returns_none_for_nonexistent() {
 
 #[test]
 fn test_sync_openrouter_missing_key_preserves_existing_models() {
-    use orion_agent::models::sync;
+    use orion_core::models::sync;
 
     let catalog = ModelCatalog::new().expect("Failed to create catalog");
 

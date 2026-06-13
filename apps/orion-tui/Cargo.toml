@@ -1,0 +1,17 @@
+[package]
+name = "orion-tui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+orion-core = { path = "../../crates/orion-core" }
+ratatui.workspace = true
+crossterm.workspace = true
+tokio.workspace = true
+anyhow.workspace = true
+chrono.workspace = true
+
+[[bin]]
+name = "orion-agent"
+path = "src/main.rs"
