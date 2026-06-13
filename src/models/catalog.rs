@@ -54,6 +54,7 @@ pub struct ModelInfo {
     pub provider_id: String,
     pub model_id: String,
     pub display_name: String,
+    pub source: Option<String>,
     pub context_window: Option<u32>,
     pub max_output: Option<u32>,
     pub input_price: Option<f64>,
@@ -63,6 +64,9 @@ pub struct ModelInfo {
     pub supports_reasoning: bool,
     pub supports_structured_output: bool,
     pub enabled: bool,
+    pub is_free: bool,
+    pub is_local: bool,
+    pub is_available: bool,
     pub rank_overall: Option<u32>,
     pub rank_coding: Option<u32>,
     pub rank_vision: Option<u32>,
@@ -81,6 +85,16 @@ pub struct Capability {
     pub model_id: String,
     pub capability: String,
     pub value: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct ModelSource {
+    pub id: String,
+    pub name: String,
+    pub url: String,
+    pub enabled: bool,
+    pub last_sync_at: Option<String>,
+    pub last_error: Option<String>,
 }
 
 pub struct ModelCatalog {
@@ -121,11 +135,23 @@ impl ModelCatalog {
                 supports_reasoning INTEGER DEFAULT 0,
                 supports_structured_output INTEGER DEFAULT 0,
                 enabled INTEGER DEFAULT 1,
+                is_free INTEGER DEFAULT 0,
+                is_local INTEGER DEFAULT 0,
+                is_available INTEGER DEFAULT 1,
                 rank_overall INTEGER,
                 rank_coding INTEGER,
                 rank_vision INTEGER,
                 updated_at TEXT,
                 FOREIGN KEY(provider_id) REFERENCES providers(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS model_sources (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                url TEXT NOT NULL,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                last_sync_at TEXT,
+                last_error TEXT
             );
 
             CREATE TABLE IF NOT EXISTS config (
@@ -153,6 +179,7 @@ impl ModelCatalog {
 
         catalog.run_migrations()?;
         catalog.init_default_providers()?;
+        catalog.init_default_sources()?;
         Ok(catalog)
     }
 
@@ -183,6 +210,27 @@ impl ModelCatalog {
                 "#,
             )?;
             conn.execute("INSERT INTO provider_migrations (version) VALUES (1)", [])?;
+        }
+
+        if version < 2 {
+            conn.execute_batch(
+                r#"
+                ALTER TABLE models ADD COLUMN source TEXT;
+                ALTER TABLE models ADD COLUMN is_free INTEGER DEFAULT 0;
+                ALTER TABLE models ADD COLUMN is_local INTEGER DEFAULT 0;
+                ALTER TABLE models ADD COLUMN is_available INTEGER DEFAULT 1;
+
+                CREATE TABLE IF NOT EXISTS model_sources (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    url TEXT NOT NULL,
+                    enabled INTEGER NOT NULL DEFAULT 1,
+                    last_sync_at TEXT,
+                    last_error TEXT
+                );
+                "#,
+            )?;
+            conn.execute("INSERT INTO provider_migrations (version) VALUES (2)", [])?;
         }
 
         Ok(())
@@ -364,6 +412,73 @@ impl ModelCatalog {
         Ok(())
     }
 
+    pub fn init_default_sources(&self) -> Result<()> {
+        let conn = self.conn.lock();
+
+        let defaults = vec![
+            ("models_dev", "Models.dev", "https://models.dev/api/v1/models", true),
+            ("openrouter", "OpenRouter", "https://openrouter.ai/api/v1/models", true),
+        ];
+
+        for (id, name, url, enabled) in defaults {
+            conn.execute(
+                "INSERT OR IGNORE INTO model_sources (id, name, url, enabled) VALUES (?1, ?2, ?3, ?4)",
+                params![id, name, url, enabled as i32],
+            )?;
+        }
+
+        Ok(())
+    }
+
+    pub fn list_sources(&self) -> Vec<ModelSource> {
+        let conn = self.conn.lock();
+        let mut stmt = conn
+            .prepare("SELECT id, name, url, enabled, last_sync_at, last_error FROM model_sources")
+            .unwrap();
+
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(ModelSource {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    url: row.get(2)?,
+                    enabled: row.get::<_, i32>(3)? != 0,
+                    last_sync_at: row.get(4)?,
+                    last_error: row.get(5)?,
+                })
+            })
+            .unwrap();
+        rows.filter_map(|r| r.ok()).collect()
+    }
+
+    pub fn get_source(&self, id: &str) -> Option<ModelSource> {
+        let conn = self.conn.lock();
+        conn.query_row(
+            "SELECT id, name, url, enabled, last_sync_at, last_error FROM model_sources WHERE id = ?1",
+            [id],
+            |row| {
+                Ok(ModelSource {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    url: row.get(2)?,
+                    enabled: row.get::<_, i32>(3)? != 0,
+                    last_sync_at: row.get(4)?,
+                    last_error: row.get(5)?,
+                })
+            },
+        )
+        .ok()
+    }
+
+    pub fn update_source_sync(&self, source_id: &str, last_sync_at: &str, last_error: Option<&str>) -> Result<()> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "UPDATE model_sources SET last_sync_at = ?1, last_error = ?2 WHERE id = ?3",
+            params![last_sync_at, last_error, source_id],
+        )?;
+        Ok(())
+    }
+
     pub fn list_providers(&self) -> Vec<ProviderInfo> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
@@ -415,7 +530,7 @@ impl ModelCatalog {
 
         let models = if let Some(pid) = provider_id {
             let mut stmt = conn.prepare(
-                "SELECT id, provider_id, model_id, display_name, context_window, max_output, input_price, output_price, supports_vision, supports_tools, supports_reasoning, supports_structured_output, enabled, rank_overall, rank_coding, rank_vision, updated_at FROM models WHERE provider_id = ?1 ORDER BY rank_overall NULLS LAST, display_name"
+                "SELECT id, provider_id, model_id, display_name, source, context_window, max_output, input_price, output_price, supports_vision, supports_tools, supports_reasoning, supports_structured_output, enabled, is_free, is_local, is_available, rank_overall, rank_coding, rank_vision, updated_at FROM models WHERE provider_id = ?1 ORDER BY rank_overall NULLS LAST, display_name"
             ).unwrap();
             let rows = stmt
                 .query_map([pid], |row| Self::row_to_model(row))
@@ -423,7 +538,7 @@ impl ModelCatalog {
             rows.filter_map(|r| r.ok()).collect()
         } else {
             let mut stmt = conn.prepare(
-                "SELECT id, provider_id, model_id, display_name, context_window, max_output, input_price, output_price, supports_vision, supports_tools, supports_reasoning, supports_structured_output, enabled, rank_overall, rank_coding, rank_vision, updated_at FROM models ORDER BY rank_overall NULLS LAST, display_name"
+                "SELECT id, provider_id, model_id, display_name, source, context_window, max_output, input_price, output_price, supports_vision, supports_tools, supports_reasoning, supports_structured_output, enabled, is_free, is_local, is_available, rank_overall, rank_coding, rank_vision, updated_at FROM models ORDER BY rank_overall NULLS LAST, display_name"
             ).unwrap();
             let rows = stmt.query_map([], |row| Self::row_to_model(row)).unwrap();
             rows.filter_map(|r| r.ok()).collect()
@@ -438,19 +553,23 @@ impl ModelCatalog {
             provider_id: row.get(1)?,
             model_id: row.get(2)?,
             display_name: row.get::<_, Option<String>>(3)?.unwrap_or_default(),
-            context_window: row.get(4)?,
-            max_output: row.get(5)?,
-            input_price: row.get(6)?,
-            output_price: row.get(7)?,
-            supports_vision: row.get::<_, i32>(8)? != 0,
-            supports_tools: row.get::<_, i32>(9)? != 0,
-            supports_reasoning: row.get::<_, i32>(10)? != 0,
-            supports_structured_output: row.get::<_, i32>(11)? != 0,
-            enabled: row.get::<_, i32>(12)? != 0,
-            rank_overall: row.get(13)?,
-            rank_coding: row.get(14)?,
-            rank_vision: row.get(15)?,
-            updated_at: row.get(16)?,
+            source: row.get(4)?,
+            context_window: row.get(5)?,
+            max_output: row.get(6)?,
+            input_price: row.get(7)?,
+            output_price: row.get(8)?,
+            supports_vision: row.get::<_, i32>(9)? != 0,
+            supports_tools: row.get::<_, i32>(10)? != 0,
+            supports_reasoning: row.get::<_, i32>(11)? != 0,
+            supports_structured_output: row.get::<_, i32>(12)? != 0,
+            enabled: row.get::<_, i32>(13)? != 0,
+            is_free: row.get::<_, i32>(14)? != 0,
+            is_local: row.get::<_, i32>(15)? != 0,
+            is_available: row.get::<_, i32>(16)? != 0,
+            rank_overall: row.get(17)?,
+            rank_coding: row.get(18)?,
+            rank_vision: row.get(19)?,
+            updated_at: row.get(20)?,
         })
     }
 
@@ -462,7 +581,7 @@ impl ModelCatalog {
 
         let conn = self.conn.lock();
         conn.query_row(
-            "SELECT id, provider_id, model_id, display_name, context_window, max_output, input_price, output_price, supports_vision, supports_tools, supports_reasoning, supports_structured_output, enabled, rank_overall, rank_coding, rank_vision, updated_at FROM models WHERE provider_id = ?1 AND model_id = ?2",
+            "SELECT id, provider_id, model_id, display_name, source, context_window, max_output, input_price, output_price, supports_vision, supports_tools, supports_reasoning, supports_structured_output, enabled, is_free, is_local, is_available, rank_overall, rank_coding, rank_vision, updated_at FROM models WHERE provider_id = ?1 AND model_id = ?2",
             params![parts[0], parts[1]],
             |row| Self::row_to_model(row),
         ).ok()
@@ -473,7 +592,7 @@ impl ModelCatalog {
         let pattern = format!("%{}%", query.to_lowercase());
 
         let mut stmt = conn.prepare(
-            "SELECT id, provider_id, model_id, display_name, context_window, max_output, input_price, output_price, supports_vision, supports_tools, supports_reasoning, supports_structured_output, enabled, rank_overall, rank_coding, rank_vision, updated_at FROM models WHERE LOWER(display_name) LIKE ?1 OR LOWER(model_id) LIKE ?1 ORDER BY rank_overall NULLS LAST LIMIT 50"
+            "SELECT id, provider_id, model_id, display_name, source, context_window, max_output, input_price, output_price, supports_vision, supports_tools, supports_reasoning, supports_structured_output, enabled, is_free, is_local, is_available, rank_overall, rank_coding, rank_vision, updated_at FROM models WHERE LOWER(display_name) LIKE ?1 OR LOWER(model_id) LIKE ?1 ORDER BY rank_overall NULLS LAST LIMIT 50"
         ).unwrap();
 
         let rows = stmt
@@ -485,12 +604,13 @@ impl ModelCatalog {
     pub fn add_model(&self, model: &ModelInfo) -> Result<()> {
         let conn = self.conn.lock();
         conn.execute(
-            "INSERT OR REPLACE INTO models (id, provider_id, model_id, display_name, context_window, max_output, input_price, output_price, supports_vision, supports_tools, supports_reasoning, supports_structured_output, enabled, rank_overall, rank_coding, rank_vision, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, datetime('now'))",
+            "INSERT OR REPLACE INTO models (id, provider_id, model_id, display_name, source, context_window, max_output, input_price, output_price, supports_vision, supports_tools, supports_reasoning, supports_structured_output, enabled, is_free, is_local, is_available, rank_overall, rank_coding, rank_vision, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, datetime('now'))",
             params![
                 model.id,
                 model.provider_id,
                 model.model_id,
                 model.display_name,
+                model.source,
                 model.context_window,
                 model.max_output,
                 model.input_price,
@@ -500,6 +620,9 @@ impl ModelCatalog {
                 model.supports_reasoning as i32,
                 model.supports_structured_output as i32,
                 model.enabled as i32,
+                model.is_free as i32,
+                model.is_local as i32,
+                model.is_available as i32,
                 model.rank_overall,
                 model.rank_coding,
                 model.rank_vision,
@@ -523,6 +646,7 @@ impl ModelCatalog {
             provider_id: provider_id.to_string(),
             model_id: model_id.to_string(),
             display_name: display_name.to_string(),
+            source: None,
             context_window: None,
             max_output: None,
             input_price: None,
@@ -532,6 +656,9 @@ impl ModelCatalog {
             supports_reasoning: false,
             supports_structured_output: false,
             enabled: true,
+            is_free: false,
+            is_local: provider_id == "ollama",
+            is_available: true,
             rank_overall: None,
             rank_coding: None,
             rank_vision: None,
@@ -547,6 +674,8 @@ impl ModelCatalog {
                 "supports_vision" => model.supports_vision = value.as_str() == "true",
                 "supports_tools" => model.supports_tools = value.as_str() == "true",
                 "supports_reasoning" => model.supports_reasoning = value.as_str() == "true",
+                "source" => model.source = Some(value.clone()),
+                "is_free" => model.is_free = value.as_str() == "true",
                 "rank_overall" => model.rank_overall = value.parse().ok(),
                 "rank_coding" => model.rank_coding = value.parse().ok(),
                 "rank_vision" => model.rank_vision = value.parse().ok(),

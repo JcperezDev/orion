@@ -4,7 +4,7 @@ use crate::providers::{
     traits::{ChatRequest, Message},
     ProviderRegistry,
 };
-use crate::router::ModelSelector;
+use crate::router::{ModelSelector, TaskKind, ModelConstraints};
 use anyhow::Result;
 use std::sync::Arc;
 
@@ -27,6 +27,7 @@ impl Agent {
             provider_id: "openrouter".to_string(),
             model_id: "anthropic/claude-3.5-sonnet".to_string(),
             display_name: "Claude 3.5 Sonnet".to_string(),
+            source: Some("default".to_string()),
             context_window: Some(200000),
             max_output: Some(8192),
             input_price: Some(3.0),
@@ -36,6 +37,9 @@ impl Agent {
             supports_reasoning: true,
             supports_structured_output: true,
             enabled: true,
+            is_free: false,
+            is_local: false,
+            is_available: true,
             rank_overall: None,
             rank_coding: None,
             rank_vision: None,
@@ -80,7 +84,15 @@ impl Agent {
                 Some("vision") => self.list_vision_models(),
                 Some("tools") => self.list_tool_models(),
                 Some("free") => self.list_free_models(),
-                _ => eprintln!("Usage: /models list|search|vision|tools|free"),
+                Some("local") => self.list_local_models(),
+                Some("reasoning") => self.list_reasoning_models(),
+                Some("sync") => self.sync_models(),
+                Some("sources") => self.list_sources(),
+                Some("inspect") => {
+                    let model_spec = parts.get(2).map(|s| *s).unwrap_or("");
+                    self.inspect_model(model_spec);
+                }
+                _ => eprintln!("Usage: /models list|search|vision|tools|free|local|reasoning|sync|sources|inspect"),
             },
             "/model" => {
                 if let Some(model_spec) = parts.get(1) {
@@ -92,9 +104,7 @@ impl Agent {
             }
             "/best" => {
                 if let Some(task) = parts.get(1) {
-                    if let Some(model) = self.selector.best_for_task(task) {
-                        eprintln!("Best model for {}: {}", task, model.full_id());
-                    }
+                    self.best_model(task);
                 }
             }
             "/help" => self.print_help(),
@@ -383,6 +393,119 @@ Providers: openrouter, openai, anthropic, ollama, deepseek, groq, mistral, toget
             }
         } else {
             eprintln!("Provider {} not available", model.provider_id);
+        }
+    }
+
+    fn list_sources(&self) {
+        let sources = self.catalog.list_sources();
+        eprintln!("{:<16} {:<45} {:<12} {}", "name", "url", "enabled", "last_sync");
+        eprintln!("{:-<16} {:-<45} {:-<12} {}", "", "", "", "");
+        for source in sources {
+            eprintln!(
+                "{:<16} {:.<45} {:.<12} {}",
+                source.name,
+                source.url.chars().take(43).collect::<String>(),
+                source.enabled,
+                source.last_sync_at.as_deref().unwrap_or("never")
+            );
+        }
+    }
+
+    fn sync_models(&self) {
+        eprintln!("Syncing models from all sources...");
+        if let Err(e) = crate::models::sync::sync_providers(&self.catalog) {
+            eprintln!("Sync failed: {}", e);
+        } else {
+            eprintln!("Sync complete.");
+        }
+    }
+
+    fn inspect_model(&self, model_spec: &str) {
+        if model_spec.is_empty() {
+            eprintln!("Usage: /models inspect <provider:model>");
+            return;
+        }
+        if let Some(model) = self.catalog.get_model(model_spec) {
+            eprintln!("{:<20} {}", "provider:", model.provider_id);
+            eprintln!("{:<20} {}", "model:", model.model_id);
+            eprintln!("{:<20} {}", "display_name:", model.display_name);
+            eprintln!("{:<20} {}", "source:", model.source.as_deref().unwrap_or("unknown"));
+            eprintln!("{:<20} {}", "context_window:", model.context_window.map(|c| c.to_string()).unwrap_or_else(|| "unknown".to_string()));
+            eprintln!("{:<20} {}", "input_price:", model.input_price.map(|p| format!("${:.6}/tok", p)).unwrap_or_else(|| "unknown".to_string()));
+            eprintln!("{:<20} {}", "output_price:", model.output_price.map(|p| format!("${:.6}/tok", p)).unwrap_or_else(|| "unknown".to_string()));
+            eprintln!("{:<20} {}", "supports_vision:", model.supports_vision);
+            eprintln!("{:<20} {}", "supports_tools:", model.supports_tools);
+            eprintln!("{:<20} {}", "supports_reasoning:", model.supports_reasoning);
+            eprintln!("{:<20} {}", "is_free:", model.is_free);
+            eprintln!("{:<20} {}", "is_local:", model.is_local);
+            eprintln!("{:<20} {}", "is_available:", model.is_available);
+            eprintln!("{:<20} {:?}", "rank_overall:", model.rank_overall);
+        } else {
+            eprintln!("Model {} not found", model_spec);
+        }
+    }
+
+    fn list_local_models(&self) {
+        let models = self.catalog.list_models(None);
+        let local: Vec<_> = models.into_iter().filter(|m| m.is_local).collect();
+        if local.is_empty() {
+            eprintln!("No local models found");
+            return;
+        }
+        eprintln!("{:<20} {:<40} {}", "provider", "model", "context");
+        eprintln!("{:-<20} {:-<40} {}", "", "", "");
+        for model in local {
+            eprintln!(
+                "{:<20} {:.<40} {}",
+                model.provider_id,
+                model.id.chars().take(38).collect::<String>(),
+                model.context_window.map(|c| c.to_string()).unwrap_or_else(|| "?".to_string())
+            );
+        }
+    }
+
+    fn list_reasoning_models(&self) {
+        let models = self.catalog.list_models(None);
+        let reasoning: Vec<_> = models.into_iter()
+            .filter(|m| m.id.contains("reasoning") || m.id.contains("o1") || m.id.contains("o3"))
+            .collect();
+        if reasoning.is_empty() {
+            eprintln!("No reasoning models found");
+            return;
+        }
+        eprintln!("{:<20} {:<40} {}", "provider", "model", "context");
+        eprintln!("{:-<20} {:-<40} {}", "", "", "");
+        for model in reasoning {
+            eprintln!(
+                "{:<20} {:.<40} {}",
+                model.provider_id,
+                model.id.chars().take(38).collect::<String>(),
+                model.context_window.map(|c| c.to_string()).unwrap_or_else(|| "?".to_string())
+            );
+        }
+    }
+
+    fn best_model(&self, task: &str) {
+        let kind = match task {
+            "coding" => TaskKind::Coding,
+            "vision" => TaskKind::Vision,
+            "reasoning" => TaskKind::Reasoning,
+            "cheap" => TaskKind::Cheap,
+            "fast" => TaskKind::Fast,
+            "local" => TaskKind::Local,
+            "tools" => TaskKind::Tools,
+            _ => TaskKind::General,
+        };
+        let result = self.selector.select_best_model(kind, ModelConstraints::default());
+        eprintln!("Task: {}", task);
+        eprintln!("Model: {}", result.recommendation.as_ref().map(|r| r.model.full_id()).unwrap_or_else(|| "none".to_string()));
+        if let Some(ref rec) = result.recommendation {
+            eprintln!("Score: {:.2}", rec.score);
+            eprintln!("Heuristic: {}", rec.heuristic_score);
+            eprintln!("Fallbacks: {}", rec.fallback_count);
+        }
+        if !result.missing_requirements.is_empty() {
+            eprintln!("Missing: {:?}", result.missing_requirements);
         }
     }
 }
