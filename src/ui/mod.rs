@@ -4,35 +4,49 @@ pub mod sidebar;
 pub mod statusbar;
 
 use crate::app::App;
-use ratatui::layout::{Constraint, Direction, Layout};
+use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::Frame;
 
 pub fn render(f: &mut Frame, app: &App) {
+    let total_height = f.size().height;
+    let input_height = 3u16;
+    let status_height = 1u16;
+    let chat_height = total_height.saturating_sub(input_height + status_height);
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1),
-            Constraint::Min(0),
-            Constraint::Length(3),
+            Constraint::Length(status_height),
+            Constraint::Length(chat_height),
+            Constraint::Length(input_height),
         ])
         .split(f.size());
 
-    let sidebar_chunks = Layout::default()
+    let main_area = chunks[1];
+    let sidebar_width = 20u16;
+    let chat_width = f.size().width.saturating_sub(sidebar_width);
+
+    let main_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Percentage(20),
-            Constraint::Percentage(60),
-            Constraint::Percentage(20),
+            Constraint::Length(chat_width),
+            Constraint::Length(sidebar_width),
         ])
-        .split(chunks[1]);
+        .split(main_area);
 
-    f.render_widget(sidebar::render(&app.state), chunks[0]);
+    let chat_area = Rect::new(main_chunks[0].x, main_chunks[0].y, chat_width, chat_height);
+    let sidebar_area = Rect::new(
+        main_chunks[0].right(),
+        main_chunks[0].y,
+        sidebar_width,
+        chat_height,
+    );
 
-    chat::render(f, &app.state.messages, sidebar_chunks[1]);
+    statusbar::render(f, "ORION ready. Type /help for commands", chunks[0]);
+
+    chat::render(f, &app.state.messages, chat_area);
+
+    sidebar::render(f, &app.state, sidebar_area);
 
     input::render(f, &app.state.input_buffer, chunks[2]);
-
-    if let Some(panel) = &app.state.active_panel {
-        statusbar::render(f, panel, chunks[0]);
-    }
 }

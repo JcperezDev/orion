@@ -2,9 +2,18 @@ use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 
 #[derive(Debug)]
 pub enum EventType {
-    Input(String),
+    Input(InputEvent),
     Tick,
-    Quit,
+}
+
+#[derive(Debug, Clone)]
+pub enum InputEvent {
+    Char(char),
+    Enter,
+    Backspace,
+    CtrlC,
+    CtrlQ,
+    Unknown,
 }
 
 pub struct EventLoop {
@@ -21,7 +30,7 @@ impl EventLoop {
 
     pub async fn next_event(&self) -> EventType {
         if let Ok(true) = crossterm::event::poll(std::time::Duration::from_millis(50)) {
-            if let Event::Key(key) = event::read().unwrap() {
+            if let Ok(Event::Key(key)) = event::read() {
                 if key.kind == KeyEventKind::Press {
                     return self.handle_key_event(key.code, key.modifiers);
                 }
@@ -31,20 +40,30 @@ impl EventLoop {
     }
 
     fn handle_key_event(&self, code: KeyCode, modifiers: KeyModifiers) -> EventType {
-        if modifiers.contains(KeyModifiers::CONTROL) && code == KeyCode::Char('c') {
-            return EventType::Quit;
+        if modifiers.contains(KeyModifiers::CONTROL) {
+            match code {
+                KeyCode::Char('c') => return EventType::Input(InputEvent::CtrlC),
+                KeyCode::Char('q') => return EventType::Input(InputEvent::CtrlQ),
+                _ => {}
+            }
         }
 
         match code {
-            KeyCode::Char(c) => EventType::Input(c.to_string()),
-            KeyCode::Enter => EventType::Input("\n".to_string()),
-            KeyCode::Backspace => EventType::Input("\x08".to_string()),
-            KeyCode::Left => EventType::Input("\x1b[D".to_string()),
-            KeyCode::Right => EventType::Input("\x1b[C".to_string()),
-            KeyCode::Up => EventType::Input("\x1b[A".to_string()),
-            KeyCode::Down => EventType::Input("\x1b[B".to_string()),
-            KeyCode::Tab => EventType::Input("\t".to_string()),
-            KeyCode::Esc => EventType::Input("\x1b".to_string()),
+            KeyCode::Char(c) => {
+                if c.is_control() {
+                    EventType::Tick
+                } else {
+                    EventType::Input(InputEvent::Char(c))
+                }
+            }
+            KeyCode::Enter => EventType::Input(InputEvent::Enter),
+            KeyCode::Backspace => EventType::Input(InputEvent::Backspace),
+            KeyCode::Tab => EventType::Tick,
+            KeyCode::Esc => EventType::Tick,
+            KeyCode::Left | KeyCode::Right | KeyCode::Up | KeyCode::Down => EventType::Tick,
+            KeyCode::Home | KeyCode::End | KeyCode::PageUp | KeyCode::PageDown => EventType::Tick,
+            KeyCode::Insert | KeyCode::Delete => EventType::Tick,
+            KeyCode::F(_) => EventType::Tick,
             _ => EventType::Tick,
         }
     }

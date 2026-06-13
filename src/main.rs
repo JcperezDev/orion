@@ -13,7 +13,7 @@ use anyhow::Result;
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 
-use app::event::EventType;
+use app::event::{EventType, InputEvent};
 use app::{App, EventLoop};
 use config::Config;
 use core::agent::Agent;
@@ -34,22 +34,36 @@ impl Orion {
     }
 
     pub async fn run(&mut self) -> Result<()> {
+        setup_terminal()?;
+
+        let result = self.run_inner().await;
+
+        restore_terminal();
+
+        result
+    }
+
+    async fn run_inner(&mut self) -> Result<()> {
         let backend = CrosstermBackend::new(std::io::stderr());
         let mut terminal = Terminal::new(backend)?;
+
+        terminal.clear()?;
+        terminal.hide_cursor()?;
 
         loop {
             terminal.draw(|f| ui::render(f, &self.app))?;
 
             match EventLoop::new().next_event().await {
                 EventType::Input(input) => {
-                    let input_clone = input.clone();
+                    if matches!(input, InputEvent::CtrlC | InputEvent::CtrlQ) {
+                        self.app.state.add_message("system", "Goodbye!".to_string());
+                        break;
+                    }
                     self.app.handle_input(input);
-                    self.agent.process_input(&input_clone).await;
                 }
                 EventType::Tick => {
                     self.app.tick();
                 }
-                EventType::Quit => break,
             }
         }
 
@@ -57,9 +71,48 @@ impl Orion {
     }
 }
 
+fn setup_terminal() -> Result<()> {
+    use crossterm::execute;
+    use crossterm::terminal::{enable_raw_mode, EnterAlternateScreen};
+
+    enable_raw_mode()?;
+    execute!(std::io::stderr(), EnterAlternateScreen)?;
+    execute!(
+        std::io::stderr(),
+        crossterm::terminal::Clear(crossterm::terminal::ClearType::All)
+    )?;
+
+    Ok(())
+}
+
+fn restore_terminal() {
+    use crossterm::execute;
+    use crossterm::terminal::{disable_raw_mode, LeaveAlternateScreen};
+
+    let _ = execute!(std::io::stderr(), LeaveAlternateScreen);
+    let _ = disable_raw_mode();
+    let _ = execute!(std::io::stderr(), crossterm::cursor::Show);
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
-    let mut orion = Orion::new().await?;
-    orion.run().await?;
+    let result = Orion::new().await;
+
+    match result {
+        Ok(mut orion) => {
+            if let Err(e) = orion.run().await {
+                restore_terminal();
+                eprintln!("Error during runtime: {}", e);
+                return Err(e);
+            }
+        }
+        Err(e) => {
+            restore_terminal();
+            eprintln!("Error during initialization: {}", e);
+            return Err(e);
+        }
+    }
+
+    restore_terminal();
     Ok(())
 }
