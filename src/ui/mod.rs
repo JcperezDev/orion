@@ -2,29 +2,37 @@ pub mod chat;
 pub mod input;
 pub mod sidebar;
 pub mod statusbar;
+pub mod theme;
 
 use crate::app::App;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::Frame;
+use theme::Theme;
 
 pub fn render(f: &mut Frame, app: &App) {
+    let theme = Theme::dark();
     let total_height = f.size().height;
+    let total_width = f.size().width;
+
+    let title_height = 1u16;
     let input_height = 3u16;
-    let status_height = 1u16;
-    let chat_height = total_height.saturating_sub(input_height + status_height);
+    let main_height = total_height.saturating_sub(title_height + input_height);
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(status_height),
-            Constraint::Length(chat_height),
+            Constraint::Length(title_height),
+            Constraint::Length(main_height),
             Constraint::Length(input_height),
         ])
         .split(f.size());
 
+    let title_area = chunks[0];
     let main_area = chunks[1];
-    let sidebar_width = 20u16;
-    let chat_width = f.size().width.saturating_sub(sidebar_width);
+    let input_area = chunks[2];
+
+    let sidebar_width = 25u16.min(total_width / 4);
+    let chat_width = total_width.saturating_sub(sidebar_width);
 
     let main_chunks = Layout::default()
         .direction(Direction::Horizontal)
@@ -34,19 +42,19 @@ pub fn render(f: &mut Frame, app: &App) {
         ])
         .split(main_area);
 
-    let chat_area = Rect::new(main_chunks[0].x, main_chunks[0].y, chat_width, chat_height);
+    let chat_area = Rect::new(main_chunks[0].x, main_chunks[0].y, chat_width, main_height);
     let sidebar_area = Rect::new(
-        main_chunks[0].right(),
-        main_chunks[0].y,
+        main_chunks[1].x,
+        main_chunks[1].y,
         sidebar_width,
-        chat_height,
+        main_height,
     );
 
-    statusbar::render(f, "ORION ready. Type /help for commands", chunks[0]);
+    statusbar::render(f, &app.state, title_area, &theme);
 
-    chat::render(f, &app.state.messages, chat_area);
+    chat::render(f, &app.state.messages, chat_area, &theme);
 
-    sidebar::render(f, &app.state, sidebar_area);
+    sidebar::render(f, &app.state, sidebar_area, &theme);
 
-    input::render(f, &app.state.input_buffer, chunks[2]);
+    input::render(f, &app.state.input_buffer, input_area, &theme);
 }

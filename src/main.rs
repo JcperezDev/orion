@@ -44,7 +44,9 @@ impl Orion {
     }
 
     async fn run_inner(&mut self) -> Result<()> {
-        let backend = CrosstermBackend::new(std::io::stderr());
+        use std::io;
+
+        let backend = CrosstermBackend::new(io::stdout());
         let mut terminal = Terminal::new(backend)?;
 
         terminal.clear()?;
@@ -76,9 +78,9 @@ fn setup_terminal() -> Result<()> {
     use crossterm::terminal::{enable_raw_mode, EnterAlternateScreen};
 
     enable_raw_mode()?;
-    execute!(std::io::stderr(), EnterAlternateScreen)?;
+    execute!(std::io::stdout(), EnterAlternateScreen)?;
     execute!(
-        std::io::stderr(),
+        std::io::stdout(),
         crossterm::terminal::Clear(crossterm::terminal::ClearType::All)
     )?;
 
@@ -89,9 +91,9 @@ fn restore_terminal() {
     use crossterm::execute;
     use crossterm::terminal::{disable_raw_mode, LeaveAlternateScreen};
 
-    let _ = execute!(std::io::stderr(), LeaveAlternateScreen);
+    let _ = execute!(std::io::stdout(), LeaveAlternateScreen);
     let _ = disable_raw_mode();
-    let _ = execute!(std::io::stderr(), crossterm::cursor::Show);
+    let _ = execute!(std::io::stdout(), crossterm::cursor::Show);
 }
 
 #[tokio::main]
