@@ -1,9 +1,9 @@
-use std::collections::HashMap;
-use std::sync::Arc;
-use parking_lot::Mutex;
 use crate::models::{ModelCatalog, ProviderKind};
 use crate::providers::traits::LlmProvider;
-use crate::providers::{OpenAICompatibleProvider, AnthropicProvider, OllamaProvider};
+use crate::providers::{AnthropicProvider, OllamaProvider, OpenAICompatibleProvider};
+use parking_lot::Mutex;
+use std::collections::HashMap;
+use std::sync::Arc;
 
 pub struct ProviderRegistry {
     providers: Mutex<HashMap<String, Arc<dyn LlmProvider>>>,
@@ -35,7 +35,9 @@ impl ProviderRegistry {
             let provider: Option<Arc<dyn LlmProvider>> = match info.kind {
                 ProviderKind::OpenAICompatible => {
                     let base_url = info.base_url.as_ref().map(|s| s.as_str()).unwrap_or("");
-                    let api_key = info.api_key_env.as_ref()
+                    let api_key = info
+                        .api_key_env
+                        .as_ref()
                         .and_then(|k| std::env::var(k).ok())
                         .unwrap_or_default();
                     Some(Arc::new(OpenAICompatibleProvider::new(
@@ -45,18 +47,26 @@ impl ProviderRegistry {
                     )) as Arc<dyn LlmProvider>)
                 }
                 ProviderKind::Anthropic => {
-                    let api_key = info.api_key_env.as_ref()
+                    let api_key = info
+                        .api_key_env
+                        .as_ref()
                         .and_then(|k| std::env::var(k).ok())
                         .unwrap_or_default();
                     Some(Arc::new(AnthropicProvider::new(&api_key)) as Arc<dyn LlmProvider>)
                 }
                 ProviderKind::Ollama => {
-                    let base_url = info.base_url.as_ref().map(|s| s.as_str()).unwrap_or("http://localhost:11434");
+                    let base_url = info
+                        .base_url
+                        .as_ref()
+                        .map(|s| s.as_str())
+                        .unwrap_or("http://localhost:11434");
                     Some(Arc::new(OllamaProvider::new(base_url)) as Arc<dyn LlmProvider>)
                 }
                 ProviderKind::Google | ProviderKind::Custom => {
                     let base_url = info.base_url.as_ref().map(|s| s.as_str()).unwrap_or("");
-                    let api_key = info.api_key_env.as_ref()
+                    let api_key = info
+                        .api_key_env
+                        .as_ref()
                         .and_then(|k| std::env::var(k).ok())
                         .unwrap_or_default();
                     if !base_url.is_empty() {

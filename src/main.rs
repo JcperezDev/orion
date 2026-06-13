@@ -10,11 +10,11 @@ mod router;
 mod ui;
 
 use anyhow::Result;
-use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
+use ratatui::Terminal;
 
-use app::{App, EventLoop};
 use app::event::EventType;
+use app::{App, EventLoop};
 use config::Config;
 use core::agent::Agent;
 

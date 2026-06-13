@@ -1,6 +1,6 @@
+use crate::core::context::Context;
 use anyhow::Result;
 use std::sync::Arc;
-use crate::core::context::Context;
 
 pub type PreRequestHook = Arc<dyn Fn(&mut Context) -> Result<()> + Send + Sync>;
 

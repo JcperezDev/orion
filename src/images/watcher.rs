@@ -1,5 +1,5 @@
 use anyhow::Result;
-use notify::{Watcher, RecommendedWatcher, RecursiveMode, Event};
+use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver};
@@ -22,7 +22,10 @@ impl ImageWatcher {
 
         watcher.watch(path.as_ref(), RecursiveMode::Recursive)?;
 
-        Ok(Self { watcher, receiver: rx })
+        Ok(Self {
+            watcher,
+            receiver: rx,
+        })
     }
 
     pub fn wait_for_image(&self, timeout: Duration) -> Option<PathBuf> {
@@ -45,7 +48,10 @@ impl ImageWatcher {
     fn is_image(&self, path: &Path) -> bool {
         if let Some(ext) = path.extension() {
             let ext = ext.to_str().unwrap_or("").to_lowercase();
-            matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp")
+            matches!(
+                ext.as_str(),
+                "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp"
+            )
         } else {
             false
         }

@@ -1,7 +1,7 @@
+use crate::core::context::Context;
 use anyhow::Result;
 use std::collections::HashMap;
 use std::sync::Arc;
-use crate::core::context::Context;
 
 #[derive(Clone)]
 #[allow(dead_code)]
@@ -72,7 +72,17 @@ impl McpManager {
     pub fn list_tools(&self) -> Vec<String> {
         self.servers
             .keys()
-            .map(|k| format!("{} ({})", k, if self.servers.get(k).map(|s| s.enabled).unwrap_or(false) { "connected" } else { "disconnected" }))
+            .map(|k| {
+                format!(
+                    "{} ({})",
+                    k,
+                    if self.servers.get(k).map(|s| s.enabled).unwrap_or(false) {
+                        "connected"
+                    } else {
+                        "disconnected"
+                    }
+                )
+            })
             .collect()
     }
 

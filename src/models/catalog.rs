@@ -1,7 +1,7 @@
-use std::sync::Arc;
 use anyhow::Result;
-use rusqlite::{Connection, params};
 use parking_lot::Mutex;
+use rusqlite::{params, Connection};
+use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 pub struct ProviderInfo {
@@ -11,6 +11,9 @@ pub struct ProviderInfo {
     pub base_url: Option<String>,
     pub api_key_env: Option<String>,
     pub enabled: bool,
+    pub supports_streaming: bool,
+    pub supports_tools: bool,
+    pub supports_vision: bool,
     pub last_sync_at: Option<String>,
 }
 
@@ -98,6 +101,9 @@ impl ModelCatalog {
                 base_url TEXT,
                 api_key_env TEXT,
                 enabled INTEGER NOT NULL DEFAULT 1,
+                supports_streaming INTEGER NOT NULL DEFAULT 1,
+                supports_tools INTEGER NOT NULL DEFAULT 1,
+                supports_vision INTEGER NOT NULL DEFAULT 0,
                 last_sync_at TEXT
             );
 
@@ -129,13 +135,23 @@ impl ModelCatalog {
 
             CREATE INDEX IF NOT EXISTS idx_models_provider ON models(provider_id);
             CREATE INDEX IF NOT EXISTS idx_models_rank ON models(rank_overall);
-            "#
+            "#,
+        )?;
+
+        conn.execute_batch(
+            r#"
+            CREATE TABLE IF NOT EXISTS provider_migrations (
+                version INTEGER PRIMARY KEY
+            );
+            INSERT OR IGNORE INTO provider_migrations (version) VALUES (1);
+            "#,
         )?;
 
         let catalog = Self {
             conn: Arc::new(Mutex::new(conn)),
         };
 
+        catalog.run_migrations()?;
         catalog.init_default_providers()?;
         Ok(catalog)
     }
@@ -148,31 +164,200 @@ impl ModelCatalog {
         Ok(config_dir.join("catalog.db"))
     }
 
+    fn run_migrations(&self) -> Result<()> {
+        let conn = self.conn.lock();
+        let version: i32 = conn
+            .query_row(
+                "SELECT COALESCE(MAX(version), 0) FROM provider_migrations",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+
+        if version < 1 {
+            conn.execute_batch(
+                r#"
+                ALTER TABLE providers ADD COLUMN supports_streaming INTEGER NOT NULL DEFAULT 1;
+                ALTER TABLE providers ADD COLUMN supports_tools INTEGER NOT NULL DEFAULT 1;
+                ALTER TABLE providers ADD COLUMN supports_vision INTEGER NOT NULL DEFAULT 0;
+                "#,
+            )?;
+            conn.execute("INSERT INTO provider_migrations (version) VALUES (1)", [])?;
+        }
+
+        Ok(())
+    }
+
     fn init_default_providers(&self) -> Result<()> {
         let conn = self.conn.lock();
 
         let defaults = vec![
-            ("openrouter", "OpenRouter", "openai_compatible", "https://openrouter.ai/api/v1", Some("OPENROUTER_API_KEY")),
-            ("openai", "OpenAI", "openai_compatible", "https://api.openai.com/v1", Some("OPENAI_API_KEY")),
-            ("anthropic", "Anthropic", "anthropic", "", Some("ANTHROPIC_API_KEY")),
-            ("ollama", "Ollama", "ollama", "http://localhost:11434", None),
-            ("deepseek", "DeepSeek", "openai_compatible", "https://api.deepseek.com", Some("DEEPSEEK_API_KEY")),
-            ("groq", "Groq", "openai_compatible", "https://api.groq.com/openai/v1", Some("GROQ_API_KEY")),
-            ("mistral", "Mistral", "openai_compatible", "https://api.mistral.ai/v1", Some("MISTRAL_API_KEY")),
-            ("together", "Together AI", "openai_compatible", "https://api.together.xyz/v1", Some("TOGETHER_API_KEY")),
-            ("perplexity", "Perplexity", "openai_compatible", "https://api.perplexity.ai", Some("PERPLEXITY_API_KEY")),
-            ("minimax", "MiniMax", "openai_compatible", "https://api.minimaxi.chat/v1", Some("MINIMAX_API_KEY")),
-            ("google", "Google AI", "google", "https://generativelanguage.googleapis.com/v1beta", Some("GOOGLE_API_KEY")),
-            ("qwen", "Qwen", "openai_compatible", "https://dashscope.aliyuncs.com/api-api/v1", Some("DASHSCOPE_API_KEY")),
-            ("ernie", "Ernie", "openai_compatible", "https://qianfan.baidubce.com/v2/app/conversation", Some("ERNIE_API_KEY")),
-            ("kimi", "Kimi", "openai_compatible", "https://api.moonshot.cn/v1", Some("KIMI_API_KEY")),
-            ("hunyuan", "Hunyuan", "openai_compatible", "https://api.hunyuan.cloud.tencent.com/v1", Some("HUNYUAN_API_KEY")),
+            (
+                "openrouter",
+                "OpenRouter",
+                "openai_compatible",
+                "https://openrouter.ai/api/v1",
+                Some("OPENROUTER_API_KEY"),
+                true,
+                true,
+                true,
+            ),
+            (
+                "openai",
+                "OpenAI",
+                "openai_compatible",
+                "https://api.openai.com/v1",
+                Some("OPENAI_API_KEY"),
+                true,
+                true,
+                true,
+            ),
+            (
+                "anthropic",
+                "Anthropic",
+                "anthropic",
+                "",
+                Some("ANTHROPIC_API_KEY"),
+                true,
+                true,
+                true,
+            ),
+            (
+                "ollama",
+                "Ollama",
+                "ollama",
+                "http://localhost:11434",
+                None,
+                true,
+                true,
+                false,
+            ),
+            (
+                "deepseek",
+                "DeepSeek",
+                "openai_compatible",
+                "https://api.deepseek.com",
+                Some("DEEPSEEK_API_KEY"),
+                true,
+                true,
+                false,
+            ),
+            (
+                "groq",
+                "Groq",
+                "openai_compatible",
+                "https://api.groq.com/openai/v1",
+                Some("GROQ_API_KEY"),
+                true,
+                true,
+                false,
+            ),
+            (
+                "mistral",
+                "Mistral",
+                "openai_compatible",
+                "https://api.mistral.ai/v1",
+                Some("MISTRAL_API_KEY"),
+                true,
+                true,
+                false,
+            ),
+            (
+                "together",
+                "Together AI",
+                "openai_compatible",
+                "https://api.together.xyz/v1",
+                Some("TOGETHER_API_KEY"),
+                true,
+                true,
+                false,
+            ),
+            (
+                "perplexity",
+                "Perplexity",
+                "openai_compatible",
+                "https://api.perplexity.ai",
+                Some("PERPLEXITY_API_KEY"),
+                true,
+                true,
+                true,
+            ),
+            (
+                "minimax",
+                "MiniMax",
+                "openai_compatible",
+                "https://api.minimaxi.chat/v1",
+                Some("MINIMAX_API_KEY"),
+                true,
+                true,
+                false,
+            ),
+            (
+                "google",
+                "Google AI",
+                "google",
+                "https://generativelanguage.googleapis.com/v1beta",
+                Some("GOOGLE_API_KEY"),
+                true,
+                true,
+                true,
+            ),
+            (
+                "qwen",
+                "Qwen",
+                "openai_compatible",
+                "https://dashscope.aliyuncs.com/api-api/v1",
+                Some("DASHSCOPE_API_KEY"),
+                true,
+                true,
+                false,
+            ),
+            (
+                "ernie",
+                "Ernie",
+                "openai_compatible",
+                "https://qianfan.baidubce.com/v2/app/conversation",
+                Some("ERNIE_API_KEY"),
+                true,
+                false,
+                false,
+            ),
+            (
+                "kimi",
+                "Kimi",
+                "openai_compatible",
+                "https://api.moonshot.cn/v1",
+                Some("KIMI_API_KEY"),
+                true,
+                true,
+                false,
+            ),
+            (
+                "hunyuan",
+                "Hunyuan",
+                "openai_compatible",
+                "https://api.hunyuan.cloud.tencent.com/v1",
+                Some("HUNYUAN_API_KEY"),
+                true,
+                true,
+                false,
+            ),
         ];
 
-        for (id, name, kind, base_url, api_key_env) in defaults {
+        for (
+            id,
+            name,
+            kind,
+            base_url,
+            api_key_env,
+            supports_streaming,
+            supports_tools,
+            supports_vision,
+        ) in defaults
+        {
             conn.execute(
-                "INSERT OR IGNORE INTO providers (id, name, kind, base_url, api_key_env) VALUES (?1, ?2, ?3, ?4, ?5)",
-                params![id, name, kind, base_url, api_key_env],
+                "INSERT OR IGNORE INTO providers (id, name, kind, base_url, api_key_env, supports_streaming, supports_tools, supports_vision) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                params![id, name, kind, base_url, api_key_env, supports_streaming as i32, supports_tools as i32, supports_vision as i32],
             )?;
         }
 
@@ -182,20 +367,25 @@ impl ModelCatalog {
     pub fn list_providers(&self) -> Vec<ProviderInfo> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
-            "SELECT id, name, kind, base_url, api_key_env, enabled, last_sync_at FROM providers ORDER BY name"
+            "SELECT id, name, kind, base_url, api_key_env, enabled, supports_streaming, supports_tools, supports_vision, last_sync_at FROM providers ORDER BY name"
         ).unwrap();
 
-        let rows = stmt.query_map([], |row| {
-            Ok(ProviderInfo {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                kind: ProviderKind::from_str(&row.get::<_, String>(2)?),
-                base_url: row.get(3)?,
-                api_key_env: row.get(4)?,
-                enabled: row.get::<_, i32>(5)? != 0,
-                last_sync_at: row.get(6)?,
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(ProviderInfo {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    kind: ProviderKind::from_str(&row.get::<_, String>(2)?),
+                    base_url: row.get(3)?,
+                    api_key_env: row.get(4)?,
+                    enabled: row.get::<_, i32>(5)? != 0,
+                    supports_streaming: row.get::<_, i32>(6)? != 0,
+                    supports_tools: row.get::<_, i32>(7)? != 0,
+                    supports_vision: row.get::<_, i32>(8)? != 0,
+                    last_sync_at: row.get(9)?,
+                })
             })
-        }).unwrap();
+            .unwrap();
 
         rows.filter_map(|r| r.ok()).collect()
     }
@@ -203,7 +393,7 @@ impl ModelCatalog {
     pub fn get_provider(&self, id: &str) -> Option<ProviderInfo> {
         let conn = self.conn.lock();
         conn.query_row(
-            "SELECT id, name, kind, base_url, api_key_env, enabled, last_sync_at FROM providers WHERE id = ?1",
+            "SELECT id, name, kind, base_url, api_key_env, enabled, supports_streaming, supports_tools, supports_vision, last_sync_at FROM providers WHERE id = ?1",
             [id],
             |row| Ok(ProviderInfo {
                 id: row.get(0)?,
@@ -212,7 +402,10 @@ impl ModelCatalog {
                 base_url: row.get(3)?,
                 api_key_env: row.get(4)?,
                 enabled: row.get::<_, i32>(5)? != 0,
-                last_sync_at: row.get(6)?,
+                supports_streaming: row.get::<_, i32>(6)? != 0,
+                supports_tools: row.get::<_, i32>(7)? != 0,
+                supports_vision: row.get::<_, i32>(8)? != 0,
+                last_sync_at: row.get(9)?,
             })
         ).ok()
     }
@@ -224,7 +417,9 @@ impl ModelCatalog {
             let mut stmt = conn.prepare(
                 "SELECT id, provider_id, model_id, display_name, context_window, max_output, input_price, output_price, supports_vision, supports_tools, supports_reasoning, supports_structured_output, enabled, rank_overall, rank_coding, rank_vision, updated_at FROM models WHERE provider_id = ?1 ORDER BY rank_overall NULLS LAST, display_name"
             ).unwrap();
-            let rows = stmt.query_map([pid], |row| Self::row_to_model(row)).unwrap();
+            let rows = stmt
+                .query_map([pid], |row| Self::row_to_model(row))
+                .unwrap();
             rows.filter_map(|r| r.ok()).collect()
         } else {
             let mut stmt = conn.prepare(
@@ -281,7 +476,9 @@ impl ModelCatalog {
             "SELECT id, provider_id, model_id, display_name, context_window, max_output, input_price, output_price, supports_vision, supports_tools, supports_reasoning, supports_structured_output, enabled, rank_overall, rank_coding, rank_vision, updated_at FROM models WHERE LOWER(display_name) LIKE ?1 OR LOWER(model_id) LIKE ?1 ORDER BY rank_overall NULLS LAST LIMIT 50"
         ).unwrap();
 
-        let rows = stmt.query_map([&pattern], |row| Self::row_to_model(row)).unwrap();
+        let rows = stmt
+            .query_map([&pattern], |row| Self::row_to_model(row))
+            .unwrap();
         rows.filter_map(|r| r.ok()).collect()
     }
 
@@ -311,7 +508,13 @@ impl ModelCatalog {
         Ok(())
     }
 
-    pub fn upsert_model(&self, provider_id: &str, model_id: &str, display_name: &str, attrs: &[(&str, String)]) -> Result<()> {
+    pub fn upsert_model(
+        &self,
+        provider_id: &str,
+        model_id: &str,
+        display_name: &str,
+        attrs: &[(&str, String)],
+    ) -> Result<()> {
         let full_id = format!("{}:{}", provider_id, model_id);
         let conn = self.conn.lock();
 

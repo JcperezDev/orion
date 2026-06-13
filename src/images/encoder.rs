@@ -1,5 +1,5 @@
 use anyhow::Result;
-use image::{DynamicImage, ImageFormat, GenericImageView};
+use image::{DynamicImage, GenericImageView, ImageFormat};
 use std::io::Cursor;
 use std::path::Path;
 

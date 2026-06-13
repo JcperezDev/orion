@@ -1,8 +1,8 @@
 pub mod event;
 pub mod update;
 
-use anyhow::Result;
 use crate::config::Config;
+use anyhow::Result;
 
 #[derive(Debug, Clone)]
 pub struct AppState {

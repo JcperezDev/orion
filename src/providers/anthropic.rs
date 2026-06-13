@@ -1,8 +1,8 @@
+use crate::providers::traits::{ChatRequest, ChatStream, LlmProvider};
 use anyhow::Result;
 use async_trait::async_trait;
-use crate::providers::traits::{LlmProvider, ChatRequest, ChatStream};
-use reqwest::Client;
 use futures::StreamExt;
+use reqwest::Client;
 
 pub struct AnthropicProvider {
     client: Client,
@@ -21,12 +21,16 @@ impl AnthropicProvider {
 #[async_trait]
 impl LlmProvider for AnthropicProvider {
     async fn chat_stream(&self, request: ChatRequest) -> Result<ChatStream> {
-        let messages: Vec<serde_json::Value> = request.messages.into_iter().map(|m| {
-            serde_json::json!({
-                "role": m.role,
-                "content": m.content
+        let messages: Vec<serde_json::Value> = request
+            .messages
+            .into_iter()
+            .map(|m| {
+                serde_json::json!({
+                    "role": m.role,
+                    "content": m.content
+                })
             })
-        }).collect();
+            .collect();
 
         let body = serde_json::json!({
             "model": request.model,
@@ -35,7 +39,8 @@ impl LlmProvider for AnthropicProvider {
             "stream": true,
         });
 
-        let res = self.client
+        let res = self
+            .client
             .post("https://api.anthropic.com/v1/messages")
             .header("x-api-key", &self.api_key)
             .header("anthropic-version", "2023-06-01")
@@ -57,9 +62,13 @@ impl LlmProvider for AnthropicProvider {
                                 break;
                             }
                             if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(data) {
-                                if let Some(content) = parsed.get("content").and_then(|c| c.as_array()) {
+                                if let Some(content) =
+                                    parsed.get("content").and_then(|c| c.as_array())
+                                {
                                     for item in content {
-                                        if let Some(text) = item.get("text").and_then(|t| t.as_str()) {
+                                        if let Some(text) =
+                                            item.get("text").and_then(|t| t.as_str())
+                                        {
                                             full_response.push_str(text);
                                         }
                                     }
@@ -71,7 +80,9 @@ impl LlmProvider for AnthropicProvider {
             }
         }
 
-        Ok(ChatStream { content: full_response })
+        Ok(ChatStream {
+            content: full_response,
+        })
     }
 
     fn provider_id(&self) -> &'static str {

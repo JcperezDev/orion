@@ -17,7 +17,8 @@ pub async fn handle_command(_agent: &mut crate::core::agent::Agent, input: &str)
 
 #[allow(dead_code)]
 fn print_help() {
-    eprintln!(r#"
+    eprintln!(
+        r#"
 ORION Commands:
   /help              Show this help
   /providers list    List available providers
@@ -25,5 +26,6 @@ ORION Commands:
   /models list       List models
   /models search <q> Search models
   /model <id>       Set model
-"#);
+"#
+    );
 }

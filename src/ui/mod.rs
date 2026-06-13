@@ -1,11 +1,11 @@
 pub mod chat;
-pub mod sidebar;
 pub mod input;
+pub mod sidebar;
 pub mod statusbar;
 
+use crate::app::App;
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::Frame;
-use crate::app::App;
 
 pub fn render(f: &mut Frame, app: &App) {
     let chunks = Layout::default()

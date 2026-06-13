@@ -28,25 +28,33 @@ pub fn sync_openrouter(catalog: &ModelCatalog) -> Result<()> {
             let name = model.get("name").and_then(|v| v.as_str()).unwrap_or(id);
 
             let parts: Vec<&str> = id.splitn(2, '/').collect();
-            let provider_id = if parts.len() == 2 { parts[0] } else { "openrouter" };
+            let provider_id = if parts.len() == 2 {
+                parts[0]
+            } else {
+                "openrouter"
+            };
             let model_id = if parts.len() == 2 { parts[1] } else { id };
 
-            let context_window = model.get("context_length_tokens")
+            let context_window = model
+                .get("context_length_tokens")
                 .or_else(|| model.get("context_window"))
                 .and_then(|v| v.as_u64())
                 .map(|v| v as u32);
 
-            let max_output = model.get("max_tokens")
+            let max_output = model
+                .get("max_tokens")
                 .and_then(|v| v.as_u64())
                 .map(|v| v as u32);
 
-            let input_price = model.get("pricing")
+            let input_price = model
+                .get("pricing")
                 .and_then(|p| p.get("prompt"))
                 .and_then(|v| v.as_str())
                 .and_then(|s| s.parse::<f64>().ok())
                 .map(|p| p * 1_000_000.0);
 
-            let output_price = model.get("pricing")
+            let output_price = model
+                .get("pricing")
                 .and_then(|p| p.get("completion"))
                 .and_then(|v| v.as_str())
                 .and_then(|s| s.parse::<f64>().ok())

@@ -1,6 +1,6 @@
-use anyhow::Result;
-use rusqlite::{Connection, params};
 use crate::config::Config;
+use anyhow::Result;
+use rusqlite::{params, Connection};
 use std::path::PathBuf;
 
 #[allow(dead_code)]
@@ -40,14 +40,18 @@ impl Memory {
         let created_at = chrono::Utc::now().to_rfc3339();
         let tags = "";
 
-        self.conn.execute(
-            "INSERT INTO memories (id, content, created_at, tags) VALUES (?1, ?2, ?3, ?4)",
-            params![id, content, created_at, tags],
-        ).ok();
+        self.conn
+            .execute(
+                "INSERT INTO memories (id, content, created_at, tags) VALUES (?1, ?2, ?3, ?4)",
+                params![id, content, created_at, tags],
+            )
+            .ok();
     }
 
     pub async fn list(&self) -> Result<Vec<String>> {
-        let mut stmt = self.conn.prepare("SELECT content FROM memories ORDER BY created_at DESC LIMIT 50")?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT content FROM memories ORDER BY created_at DESC LIMIT 50")?;
         let rows = stmt.query_map([], |row| row.get(0))?;
 
         let mut memories = Vec::new();
@@ -61,7 +65,7 @@ impl Memory {
 
     pub async fn search(&self, query: &str) -> Result<Vec<String>> {
         let mut stmt = self.conn.prepare(
-            "SELECT content FROM memories WHERE content LIKE ?1 ORDER BY created_at DESC LIMIT 20"
+            "SELECT content FROM memories WHERE content LIKE ?1 ORDER BY created_at DESC LIMIT 20",
         )?;
         let pattern = format!("%{}%", query);
         let rows = stmt.query_map([&pattern], |row| row.get(0))?;
@@ -81,7 +85,8 @@ impl Memory {
     }
 
     pub async fn delete(&self, id: &str) -> Result<()> {
-        self.conn.execute("DELETE FROM memories WHERE id = ?1", [id])?;
+        self.conn
+            .execute("DELETE FROM memories WHERE id = ?1", [id])?;
         Ok(())
     }
 }

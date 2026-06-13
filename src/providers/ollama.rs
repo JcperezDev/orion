@@ -1,8 +1,8 @@
+use crate::providers::traits::{ChatRequest, ChatStream, LlmProvider};
 use anyhow::Result;
 use async_trait::async_trait;
-use crate::providers::traits::{LlmProvider, ChatRequest, ChatStream};
-use reqwest::Client;
 use futures::StreamExt;
+use reqwest::Client;
 
 pub struct OllamaProvider {
     client: Client,
@@ -21,12 +21,16 @@ impl OllamaProvider {
 #[async_trait]
 impl LlmProvider for OllamaProvider {
     async fn chat_stream(&self, request: ChatRequest) -> Result<ChatStream> {
-        let messages: Vec<serde_json::Value> = request.messages.into_iter().map(|m| {
-            serde_json::json!({
-                "role": m.role,
-                "content": m.content
+        let messages: Vec<serde_json::Value> = request
+            .messages
+            .into_iter()
+            .map(|m| {
+                serde_json::json!({
+                    "role": m.role,
+                    "content": m.content
+                })
             })
-        }).collect();
+            .collect();
 
         let body = serde_json::json!({
             "model": request.model,
@@ -34,7 +38,8 @@ impl LlmProvider for OllamaProvider {
             "stream": true,
         });
 
-        let res = self.client
+        let res = self
+            .client
             .post(format!("{}/api/chat", self.base_url))
             .header("Content-Type", "application/json")
             .json(&body)
@@ -49,7 +54,9 @@ impl LlmProvider for OllamaProvider {
                 if let Ok(text) = String::from_utf8(bytes.to_vec()) {
                     for line in text.lines() {
                         if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(line) {
-                            if let Some(message) = parsed.get("message").and_then(|m| m.get("content")) {
+                            if let Some(message) =
+                                parsed.get("message").and_then(|m| m.get("content"))
+                            {
                                 if let Some(text) = message.as_str() {
                                     full_response.push_str(text);
                                 }
@@ -60,7 +67,9 @@ impl LlmProvider for OllamaProvider {
             }
         }
 
-        Ok(ChatStream { content: full_response })
+        Ok(ChatStream {
+            content: full_response,
+        })
     }
 
     fn provider_id(&self) -> &'static str {

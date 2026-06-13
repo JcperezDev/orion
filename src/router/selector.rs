@@ -1,6 +1,6 @@
-use std::sync::Arc;
 use crate::models::{ModelCatalog, ModelInfo};
 use crate::providers::ProviderRegistry;
+use std::sync::Arc;
 
 pub struct ModelSelector {
     catalog: Arc<ModelCatalog>,
@@ -51,7 +51,9 @@ impl ModelSelector {
             models.sort_by(|a, b| {
                 let a_price = a.input_price.unwrap_or(f64::MAX);
                 let b_price = b.input_price.unwrap_or(f64::MAX);
-                a_price.partial_cmp(&b_price).unwrap_or(std::cmp::Ordering::Equal)
+                a_price
+                    .partial_cmp(&b_price)
+                    .unwrap_or(std::cmp::Ordering::Equal)
             });
         } else {
             models.retain(|m| m.rank_overall.unwrap_or(999) > 0);
@@ -76,17 +78,35 @@ impl ModelSelector {
     }
 
     pub fn best_for_task(&self, task: &str) -> Option<ModelInfo> {
-        let criteria = if task.contains("code") || task.contains("programming") || task.contains("debug") {
-            SelectionCriteria { coding: true, ..Default::default() }
-        } else if task.contains("image") || task.contains("vision") || task.contains("visual") {
-            SelectionCriteria { vision: true, ..Default::default() }
-        } else if task.contains("think") || task.contains("reason") || task.contains("complex") {
-            SelectionCriteria { reasoning: true, ..Default::default() }
-        } else if task.contains("fast") || task.contains("quick") || task.contains("simple") || task.contains("cheap") {
-            SelectionCriteria { fast: true, ..Default::default() }
-        } else {
-            SelectionCriteria::default()
-        };
+        let criteria =
+            if task.contains("code") || task.contains("programming") || task.contains("debug") {
+                SelectionCriteria {
+                    coding: true,
+                    ..Default::default()
+                }
+            } else if task.contains("image") || task.contains("vision") || task.contains("visual") {
+                SelectionCriteria {
+                    vision: true,
+                    ..Default::default()
+                }
+            } else if task.contains("think") || task.contains("reason") || task.contains("complex")
+            {
+                SelectionCriteria {
+                    reasoning: true,
+                    ..Default::default()
+                }
+            } else if task.contains("fast")
+                || task.contains("quick")
+                || task.contains("simple")
+                || task.contains("cheap")
+            {
+                SelectionCriteria {
+                    fast: true,
+                    ..Default::default()
+                }
+            } else {
+                SelectionCriteria::default()
+            };
 
         self.select(criteria)
     }

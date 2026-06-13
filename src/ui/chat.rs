@@ -1,7 +1,7 @@
-use ratatui::widgets::{List, ListItem};
 use ratatui::layout::Rect;
-use ratatui::Frame;
 use ratatui::style::{Color, Style};
+use ratatui::widgets::{List, ListItem};
+use ratatui::Frame;
 
 #[derive(Debug, Clone)]
 pub struct Message {

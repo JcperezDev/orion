@@ -4,8 +4,8 @@ use anyhow::Result;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
-use uuid::Uuid;
 use std::time::{SystemTime, UNIX_EPOCH};
+use uuid::Uuid;
 
 #[allow(dead_code)]
 pub struct Analytics {
@@ -30,13 +30,14 @@ impl Analytics {
             id
         };
 
-        Ok(Self { device_id, config_dir })
+        Ok(Self {
+            device_id,
+            config_dir,
+        })
     }
 
     pub fn ping(&self, event: &str) -> Result<()> {
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)?
-            .as_secs();
+        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
 
         let log_path = self.config_dir.join("pings.jsonl");
         let entry = serde_json::json!({

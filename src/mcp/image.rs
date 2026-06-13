@@ -1,7 +1,7 @@
 use anyhow::Result;
-use std::path::Path;
-use image::{DynamicImage, ImageFormat, GenericImageView};
+use image::{DynamicImage, GenericImageView, ImageFormat};
 use std::io::Cursor;
+use std::path::Path;
 
 #[allow(dead_code)]
 pub struct ImageProcessor {
@@ -28,7 +28,11 @@ impl ImageProcessor {
     fn resize_if_needed(&self, img: DynamicImage) -> DynamicImage {
         let (width, height) = img.dimensions();
         if width > self.max_dimension || height > self.max_dimension {
-            img.resize(self.max_dimension, self.max_dimension, image::imageops::FilterType::Lanczos3)
+            img.resize(
+                self.max_dimension,
+                self.max_dimension,
+                image::imageops::FilterType::Lanczos3,
+            )
         } else {
             img
         }

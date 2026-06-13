@@ -1,10 +1,10 @@
-pub mod traits;
-pub mod registry;
-pub mod openai_compatible;
 pub mod anthropic;
 pub mod ollama;
+pub mod openai_compatible;
+pub mod registry;
+pub mod traits;
 
-pub use registry::ProviderRegistry;
-pub use openai_compatible::OpenAICompatibleProvider;
 pub use anthropic::AnthropicProvider;
 pub use ollama::OllamaProvider;
+pub use openai_compatible::OpenAICompatibleProvider;
+pub use registry::ProviderRegistry;
