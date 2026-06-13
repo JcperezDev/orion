@@ -416,8 +416,18 @@ impl ModelCatalog {
         let conn = self.conn.lock();
 
         let defaults = vec![
-            ("models_dev", "Models.dev", "https://models.dev/api/v1/models", true),
-            ("openrouter", "OpenRouter", "https://openrouter.ai/api/v1/models", true),
+            (
+                "models_dev",
+                "Models.dev",
+                "https://models.dev/api/v1/models",
+                true,
+            ),
+            (
+                "openrouter",
+                "OpenRouter",
+                "https://openrouter.ai/api/v1/models",
+                true,
+            ),
         ];
 
         for (id, name, url, enabled) in defaults {
@@ -470,7 +480,12 @@ impl ModelCatalog {
         .ok()
     }
 
-    pub fn update_source_sync(&self, source_id: &str, last_sync_at: &str, last_error: Option<&str>) -> Result<()> {
+    pub fn update_source_sync(
+        &self,
+        source_id: &str,
+        last_sync_at: &str,
+        last_error: Option<&str>,
+    ) -> Result<()> {
         let conn = self.conn.lock();
         conn.execute(
             "UPDATE model_sources SET last_sync_at = ?1, last_error = ?2 WHERE id = ?3",

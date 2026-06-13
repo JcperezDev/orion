@@ -111,7 +111,8 @@ impl ModelSelector {
         let mut missing_requirements = Vec::new();
 
         if models.is_empty() {
-            missing_requirements.push("No models in catalog. Run `/providers sync` first.".to_string());
+            missing_requirements
+                .push("No models in catalog. Run `/providers sync` first.".to_string());
             return SelectionResult {
                 recommendation: None,
                 fallbacks: Vec::new(),
@@ -135,7 +136,8 @@ impl ModelSelector {
             TaskKind::Local => {
                 models.retain(|m| m.is_local || m.provider_id == "ollama");
                 if models.is_empty() {
-                    missing_requirements.push("No local models found. Ollama may not be running.".to_string());
+                    missing_requirements
+                        .push("No local models found. Ollama may not be running.".to_string());
                 }
             }
             TaskKind::Reasoning => {
@@ -182,18 +184,12 @@ impl ModelSelector {
         }
 
         if let Some(max_price) = constraints.max_input_price {
-            models.retain(|m| {
-                m.input_price
-                    .map(|p| p <= max_price)
-                    .unwrap_or(true)
-            });
+            models.retain(|m| m.input_price.map(|p| p <= max_price).unwrap_or(true));
         }
 
         let available: Vec<_> = models
             .into_iter()
-            .filter(|m| {
-                self.registry.is_available(&m.provider_id) && m.is_available
-            })
+            .filter(|m| self.registry.is_available(&m.provider_id) && m.is_available)
             .collect();
 
         if available.is_empty() {

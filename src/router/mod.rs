@@ -1,3 +1,3 @@
 pub mod selector;
 
-pub use selector::{ModelSelector, TaskKind, ModelConstraints};
+pub use selector::{ModelConstraints, ModelSelector, TaskKind};

@@ -4,7 +4,7 @@ use crate::providers::{
     traits::{ChatRequest, Message},
     ProviderRegistry,
 };
-use crate::router::{ModelSelector, TaskKind, ModelConstraints};
+use crate::router::{ModelConstraints, ModelSelector, TaskKind};
 use anyhow::Result;
 use std::sync::Arc;
 
@@ -398,16 +398,34 @@ Providers: openrouter, openai, anthropic, ollama, deepseek, groq, mistral, toget
 
     fn list_sources(&self) {
         let sources = self.catalog.list_sources();
-        eprintln!("{:<16} {:<45} {:<12} {}", "name", "url", "enabled", "last_sync");
-        eprintln!("{:-<16} {:-<45} {:-<12} {}", "", "", "", "");
+        if sources.is_empty() {
+            eprintln!("No model sources configured.");
+            return;
+        }
+        eprintln!(
+            "{:<12} {:<16} {:.<42} {:<9} {}",
+            "id", "name", "url", "enabled", "last_sync"
+        );
+        eprintln!("{:-<12} {:-<16} {:-<42} {:<9} {}", "", "", "", "", "");
         for source in sources {
+            let last_sync = source.last_sync_at.as_deref().unwrap_or("never");
+            let last_error = source.last_error.as_deref().unwrap_or("");
             eprintln!(
-                "{:<16} {:.<45} {:.<12} {}",
+                "{:<12} {:.<16} {:.<42} {:.<9} {}",
+                source.id.chars().take(12).collect::<String>(),
                 source.name,
-                source.url.chars().take(43).collect::<String>(),
+                source.url.chars().take(40).collect::<String>(),
                 source.enabled,
-                source.last_sync_at.as_deref().unwrap_or("never")
+                last_sync
             );
+            if !last_error.is_empty() {
+                eprintln!(
+                    "{:<12} {:.<16} {:.<80}",
+                    "",
+                    "",
+                    format!("ERROR: {}", last_error)
+                );
+            }
         }
     }
 
@@ -429,10 +447,35 @@ Providers: openrouter, openai, anthropic, ollama, deepseek, groq, mistral, toget
             eprintln!("{:<20} {}", "provider:", model.provider_id);
             eprintln!("{:<20} {}", "model:", model.model_id);
             eprintln!("{:<20} {}", "display_name:", model.display_name);
-            eprintln!("{:<20} {}", "source:", model.source.as_deref().unwrap_or("unknown"));
-            eprintln!("{:<20} {}", "context_window:", model.context_window.map(|c| c.to_string()).unwrap_or_else(|| "unknown".to_string()));
-            eprintln!("{:<20} {}", "input_price:", model.input_price.map(|p| format!("${:.6}/tok", p)).unwrap_or_else(|| "unknown".to_string()));
-            eprintln!("{:<20} {}", "output_price:", model.output_price.map(|p| format!("${:.6}/tok", p)).unwrap_or_else(|| "unknown".to_string()));
+            eprintln!(
+                "{:<20} {}",
+                "source:",
+                model.source.as_deref().unwrap_or("unknown")
+            );
+            eprintln!(
+                "{:<20} {}",
+                "context_window:",
+                model
+                    .context_window
+                    .map(|c| c.to_string())
+                    .unwrap_or_else(|| "unknown".to_string())
+            );
+            eprintln!(
+                "{:<20} {}",
+                "input_price:",
+                model
+                    .input_price
+                    .map(|p| format!("${:.6}/tok", p))
+                    .unwrap_or_else(|| "unknown".to_string())
+            );
+            eprintln!(
+                "{:<20} {}",
+                "output_price:",
+                model
+                    .output_price
+                    .map(|p| format!("${:.6}/tok", p))
+                    .unwrap_or_else(|| "unknown".to_string())
+            );
             eprintln!("{:<20} {}", "supports_vision:", model.supports_vision);
             eprintln!("{:<20} {}", "supports_tools:", model.supports_tools);
             eprintln!("{:<20} {}", "supports_reasoning:", model.supports_reasoning);
@@ -459,14 +502,18 @@ Providers: openrouter, openai, anthropic, ollama, deepseek, groq, mistral, toget
                 "{:<20} {:.<40} {}",
                 model.provider_id,
                 model.id.chars().take(38).collect::<String>(),
-                model.context_window.map(|c| c.to_string()).unwrap_or_else(|| "?".to_string())
+                model
+                    .context_window
+                    .map(|c| c.to_string())
+                    .unwrap_or_else(|| "?".to_string())
             );
         }
     }
 
     fn list_reasoning_models(&self) {
         let models = self.catalog.list_models(None);
-        let reasoning: Vec<_> = models.into_iter()
+        let reasoning: Vec<_> = models
+            .into_iter()
             .filter(|m| m.id.contains("reasoning") || m.id.contains("o1") || m.id.contains("o3"))
             .collect();
         if reasoning.is_empty() {
@@ -480,7 +527,10 @@ Providers: openrouter, openai, anthropic, ollama, deepseek, groq, mistral, toget
                 "{:<20} {:.<40} {}",
                 model.provider_id,
                 model.id.chars().take(38).collect::<String>(),
-                model.context_window.map(|c| c.to_string()).unwrap_or_else(|| "?".to_string())
+                model
+                    .context_window
+                    .map(|c| c.to_string())
+                    .unwrap_or_else(|| "?".to_string())
             );
         }
     }
@@ -496,9 +546,18 @@ Providers: openrouter, openai, anthropic, ollama, deepseek, groq, mistral, toget
             "tools" => TaskKind::Tools,
             _ => TaskKind::General,
         };
-        let result = self.selector.select_best_model(kind, ModelConstraints::default());
+        let result = self
+            .selector
+            .select_best_model(kind, ModelConstraints::default());
         eprintln!("Task: {}", task);
-        eprintln!("Model: {}", result.recommendation.as_ref().map(|r| r.model.full_id()).unwrap_or_else(|| "none".to_string()));
+        eprintln!(
+            "Model: {}",
+            result
+                .recommendation
+                .as_ref()
+                .map(|r| r.model.full_id())
+                .unwrap_or_else(|| "none".to_string())
+        );
         if let Some(ref rec) = result.recommendation {
             eprintln!("Score: {:.2}", rec.score);
             eprintln!("Heuristic: {}", rec.heuristic_score);
