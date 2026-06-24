@@ -1,6 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use orion_core::models::catalog::{ModelInfo, ProviderInfo};
+use orion_core::models::catalog::{ModelInfo, ProviderInfo, Session};
 use orion_core::providers::registry::ProviderRegistry;
 use orion_core::providers::traits::Message;
 use orion_core::ModelCatalog;
@@ -8,7 +8,8 @@ use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Instant;
-use tauri::State;
+use tauri::{Emitter, State};
+use futures::StreamExt;
 
 pub struct AppState {
     pub catalog: Arc<ModelCatalog>,
@@ -369,6 +370,56 @@ async fn chat(
 }
 
 #[tauri::command]
+async fn send_message(
+    app_handle: tauri::AppHandle,
+    state: State<'_, AppState>,
+    session_id: String,
+    content: String,
+    mode: Option<String>,
+) -> Result<String, String> {
+    let _ = mode;
+
+    // Resolve active model (provider:model format).
+    let active = state
+        .catalog
+        .get_default_model()
+        .ok_or_else(|| "No active model. Connect a provider first.".to_string())?;
+    let provider_id = active.provider_id.clone();
+    let model_id = active.model_id.clone();
+
+    let msgs = vec![Message {
+        role: "user".to_string(),
+        content: content.clone(),
+    }];
+
+    let mut stream = state
+        .registry
+        .stream_chat_async(&provider_id, &model_id, msgs)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let mut full_response = String::new();
+    while let Some(chunk) = stream.next().await {
+        match chunk {
+            Ok(token) => {
+                full_response.push_str(&token);
+                let _ = app_handle.emit("orion://token", &token);
+            }
+            Err(e) => {
+                let msg = e.to_string();
+                let _ = app_handle.emit("orion://error", &msg);
+                return Err(msg);
+            }
+        }
+    }
+
+    let _ = app_handle.emit("orion://done", ());
+    let _ = state.catalog.touch_session(&session_id);
+
+    Ok(full_response)
+}
+
+#[tauri::command]
 fn delete_provider_api_key(
     state: State<'_, AppState>,
     provider_id: String,
@@ -385,8 +436,86 @@ fn delete_provider_api_key(
 }
 
 #[tauri::command]
+fn get_sessions(state: State<'_, AppState>) -> Vec<Session> {
+    state.catalog.list_sessions()
+}
+
+#[tauri::command]
+fn create_session(
+    state: State<'_, AppState>,
+    title: Option<String>,
+) -> Result<Session, String> {
+    let session = state
+        .catalog
+        .create_session(title.as_deref())
+        .map_err(|e| e.to_string())?;
+    state
+        .catalog
+        .set_active_session(&session.id)
+        .map_err(|e| e.to_string())?;
+    Ok(session)
+}
+
+#[tauri::command]
+fn get_active_session(state: State<'_, AppState>) -> Option<Session> {
+    if let Some(s) = state.catalog.get_active_session() {
+        return Some(s);
+    }
+    // No active session yet — create a default one and return it.
+    let session = state.catalog.create_session(Some("New session")).ok()?;
+    let _ = state.catalog.set_active_session(&session.id);
+    Some(session)
+}
+
+#[tauri::command]
+fn set_active_session(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    state
+        .catalog
+        .set_active_session(&id)
+        .map_err(|e| e.to_string())?;
+    state.catalog.touch_session(&id).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn delete_session(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    state
+        .catalog
+        .delete_session(&id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn rename_session(
+    state: State<'_, AppState>,
+    id: String,
+    title: String,
+) -> Result<(), String> {
+    state
+        .catalog
+        .rename_session(&id, &title)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn health() -> &'static str {
     "orion-desktop ok"
+}
+
+// Renamed command aliases (spec rename: set_default_model -> set_active_model,
+// save_provider_api_key -> save_provider). Old names kept for one version.
+#[tauri::command]
+fn set_active_model(state: State<'_, AppState>, model_id: String) -> Result<(), String> {
+    set_default_model(state, model_id)
+}
+
+#[tauri::command]
+fn save_provider(
+    state: State<'_, AppState>,
+    provider_id: String,
+    api_key: String,
+) -> Result<(), String> {
+    save_provider_api_key(state, provider_id, api_key)
 }
 
 fn main() {
@@ -418,12 +547,21 @@ fn main() {
             best_model,
             get_default_model,
             set_default_model,
+            set_active_model,
             save_provider_api_key,
+            save_provider,
             delete_provider_api_key,
             reload_registry,
             test_provider_connection,
             sync_provider_models,
             chat,
+            send_message,
+            get_sessions,
+            create_session,
+            get_active_session,
+            set_active_session,
+            delete_session,
+            rename_session,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

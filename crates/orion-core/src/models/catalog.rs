@@ -97,6 +97,16 @@ pub struct ModelSource {
     pub last_error: Option<String>,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Session {
+    pub id: String,
+    pub title: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub message_count: i64,
+    pub active_model: Option<String>,
+}
+
 pub struct ModelCatalog {
     conn: Arc<Mutex<Connection>>,
 }
@@ -164,8 +174,18 @@ impl ModelCatalog {
                 value TEXT
             );
 
+            CREATE TABLE IF NOT EXISTS sessions (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL DEFAULT 'New session',
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                message_count INTEGER NOT NULL DEFAULT 0,
+                active_model TEXT
+            );
+
             CREATE INDEX IF NOT EXISTS idx_models_provider ON models(provider_id);
             CREATE INDEX IF NOT EXISTS idx_models_rank ON models(rank_overall);
+            CREATE INDEX IF NOT EXISTS idx_sessions_updated ON sessions(updated_at DESC);
             "#,
         )?;
 
@@ -267,6 +287,24 @@ impl ModelCatalog {
                 [],
             )?;
             conn.execute("INSERT INTO provider_migrations (version) VALUES (2)", [])?;
+        }
+
+        if version < 3 {
+            conn.execute(
+                r#"
+                CREATE TABLE IF NOT EXISTS sessions (
+                    id TEXT PRIMARY KEY,
+                    title TEXT NOT NULL DEFAULT 'New session',
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    message_count INTEGER NOT NULL DEFAULT 0,
+                    active_model TEXT
+                );
+                CREATE INDEX IF NOT EXISTS idx_sessions_updated ON sessions(updated_at DESC);
+                "#,
+                [],
+            )?;
+            conn.execute("INSERT INTO provider_migrations (version) VALUES (3)", [])?;
         }
 
         Ok(())
@@ -842,6 +880,107 @@ impl ModelCatalog {
         conn.execute(
             "UPDATE providers SET enabled = ?1 WHERE id = ?2",
             params![enabled as i32, provider_id],
+        )?;
+        Ok(())
+    }
+
+    fn row_to_session(row: &rusqlite::Row) -> rusqlite::Result<Session> {
+        Ok(Session {
+            id: row.get(0)?,
+            title: row.get(1)?,
+            created_at: row.get(2)?,
+            updated_at: row.get(3)?,
+            message_count: row.get(4)?,
+            active_model: row.get(5)?,
+        })
+    }
+
+    pub fn list_sessions(&self) -> Vec<Session> {
+        let conn = self.conn.lock();
+        let mut stmt = match conn.prepare(
+            "SELECT id, title, created_at, updated_at, message_count, active_model FROM sessions ORDER BY updated_at DESC"
+        ) {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
+        stmt.query_map([], Self::row_to_session)
+            .map(|rows| rows.filter_map(|r| r.ok()).collect())
+            .unwrap_or_default()
+    }
+
+    pub fn get_session(&self, id: &str) -> Option<Session> {
+        let conn = self.conn.lock();
+        conn.query_row(
+            "SELECT id, title, created_at, updated_at, message_count, active_model FROM sessions WHERE id = ?1",
+            [id],
+            Self::row_to_session,
+        )
+        .ok()
+    }
+
+    pub fn create_session(&self, title: Option<&str>) -> Result<Session> {
+        let id = uuid::Uuid::new_v4().to_string();
+        let title = title.unwrap_or("New session");
+        let conn = self.conn.lock();
+        conn.execute(
+            "INSERT INTO sessions (id, title) VALUES (?1, ?2)",
+            params![&id, title],
+        )?;
+        drop(conn);
+        Ok(self
+            .get_session(&id)
+            .unwrap_or(Session {
+                id: id.clone(),
+                title: title.to_string(),
+                created_at: String::new(),
+                updated_at: String::new(),
+                message_count: 0,
+                active_model: None,
+            }))
+    }
+
+    pub fn delete_session(&self, id: &str) -> Result<()> {
+        let conn = self.conn.lock();
+        conn.execute("DELETE FROM sessions WHERE id = ?1", [id])?;
+        Ok(())
+    }
+
+    pub fn rename_session(&self, id: &str, title: &str) -> Result<()> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "UPDATE sessions SET title = ?1, updated_at = datetime('now') WHERE id = ?2",
+            params![title, id],
+        )?;
+        Ok(())
+    }
+
+    pub fn touch_session(&self, id: &str) -> Result<()> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "UPDATE sessions SET updated_at = datetime('now') WHERE id = ?1",
+            [id],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_active_session(&self) -> Option<Session> {
+        let conn = self.conn.lock();
+        let id: Option<String> = conn
+            .query_row(
+                "SELECT value FROM config WHERE key = 'active_session'",
+                [],
+                |row| row.get(0),
+            )
+            .ok();
+        drop(conn);
+        id.and_then(|sid| self.get_session(&sid))
+    }
+
+    pub fn set_active_session(&self, id: &str) -> Result<()> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "INSERT OR REPLACE INTO config (key, value) VALUES ('active_session', ?1)",
+            [id],
         )?;
         Ok(())
     }

@@ -118,7 +118,7 @@ export default function ProviderConnect({ onConnected }: Props) {
 
     try {
       if (needsKey) {
-        await invoke('save_provider_api_key', {
+        await invoke('save_provider', {
           providerId: selectedProvider,
           apiKey: apiKey.trim(),
         })
@@ -130,7 +130,7 @@ export default function ProviderConnect({ onConnected }: Props) {
       const defaultModel = DEFAULT_MODELS[selectedProvider]
       if (defaultModel) {
         try {
-          await invoke('set_default_model', { modelId: defaultModel })
+          await invoke('set_active_model', { modelId: defaultModel })
         } catch {}
       }
 

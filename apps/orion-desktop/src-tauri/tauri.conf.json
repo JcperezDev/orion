@@ -11,15 +11,16 @@
     "windows": [
       {
         "title": "ORION",
-        "width": 1300,
-        "height": 880,
-        "minWidth": 900,
-        "minHeight": 600,
+        "width": 1200,
+        "height": 760,
+        "minWidth": 800,
+        "minHeight": 540,
         "x": 2000,
         "y": 50,
         "center": false,
         "resizable": true,
-        "decorations": true,
+        "decorations": false,
+        "transparent": true,
         "visible": true
       }
     ],

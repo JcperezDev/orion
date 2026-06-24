@@ -39,7 +39,7 @@ export default function ModelsView({ models, onSearch, onLoad, loading }: Props)
   }
 
   function handleSetDefault(model: ModelSummary) {
-    invoke('set_default_model', { modelId: model.id })
+    invoke('set_active_model', { modelId: model.id })
       .then(() => {
         setSelectedModel(model)
         alert(`Default model set to: ${model.name}`)

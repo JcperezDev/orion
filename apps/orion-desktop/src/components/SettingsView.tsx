@@ -120,7 +120,7 @@ export default function SettingsView() {
   async function handleSaveKey(providerId: string) {
     if (!newKey.trim()) return
     try {
-      await invoke('save_provider_api_key', { providerId, apiKey: newKey.trim() })
+      await invoke('save_provider', { providerId, apiKey: newKey.trim() })
       await invoke('reload_registry')
       setEditingKey(null)
       setNewKey('')
@@ -154,7 +154,7 @@ export default function SettingsView() {
 
   async function handleSetDefault(modelId: string) {
     try {
-      await invoke('set_default_model', { modelId })
+      await invoke('set_active_model', { modelId })
       setDefaultModel(modelId)
     } catch (e) {
       console.error('Set default failed:', e)
