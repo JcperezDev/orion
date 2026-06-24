@@ -1,5 +1,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
+use futures::Stream;
+use std::pin::Pin;
 
 #[derive(Debug, Clone)]
 pub struct ChatRequest {
@@ -16,14 +18,11 @@ pub struct Message {
     pub content: String,
 }
 
-#[derive(Debug)]
-pub struct ChatStream {
-    pub content: String,
-}
+pub type TokenStream = Pin<Box<dyn Stream<Item = Result<String>> + Send>>;
 
 #[async_trait]
 pub trait LlmProvider: Send + Sync {
-    async fn chat_stream(&self, request: ChatRequest) -> Result<ChatStream>;
+    async fn chat_stream(&self, request: ChatRequest) -> Result<TokenStream>;
 
     fn provider_id(&self) -> &str;
 

@@ -8,11 +8,11 @@ use ratatui::Frame;
 
 pub fn render(f: &mut Frame, state: &AppState, area: Rect, theme: &Theme) {
     let nav_items = vec![
-        ("Chat", "❯", theme.accent_blue, true),
-        ("Memory", "◈", theme.purple, false),
-        ("Agents", "⬡", theme.success_green, false),
-        ("MCP Hub", "◎", theme.warning_amber, false),
-        ("History", "◷", theme.text_dim, false),
+        ("Chat", ">", theme.accent_blue, true),
+        ("Memory", "*", theme.purple, false),
+        ("Agents", "@", theme.success_green, false),
+        ("MCP Hub", "#", theme.warning_amber, false),
+        ("History", "~", theme.text_dim, false),
     ];
 
     let items: Vec<ListItem> = nav_items

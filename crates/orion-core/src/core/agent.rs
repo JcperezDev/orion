@@ -384,8 +384,19 @@ Providers: openrouter, openai, anthropic, ollama, deepseek, groq, mistral, toget
             };
 
             match provider.chat_stream(request).await {
-                Ok(response) => {
-                    eprintln!("Assistant: {}", response.content);
+                Ok(mut stream) => {
+                    use futures::StreamExt;
+                    while let Some(chunk) = stream.next().await {
+                        match chunk {
+                            Ok(s) if s.is_empty() => break,
+                            Ok(s) => print!("{s}"),
+                            Err(e) => {
+                                eprintln!("\nError: {}", e);
+                                break;
+                            }
+                        }
+                    }
+                    println!();
                 }
                 Err(e) => {
                     eprintln!("Error: {}", e);

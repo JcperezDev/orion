@@ -17,7 +17,7 @@ pub struct ProviderInfo {
     pub last_sync_at: Option<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProviderKind {
     OpenAICompatible,
     Anthropic,
@@ -106,6 +106,11 @@ impl ModelCatalog {
         let db_path = Self::db_path()?;
         let conn = Connection::open(&db_path)?;
 
+        // Enable WAL so concurrent readers and one writer can coexist (tests + app).
+        let _ = conn.pragma_update(None, "journal_mode", "WAL");
+        let _ = conn.pragma_update(None, "synchronous", "NORMAL");
+        let _ = conn.pragma_update(None, "busy_timeout", "5000");
+
         conn.execute_batch(
             r#"
             CREATE TABLE IF NOT EXISTS providers (
@@ -184,11 +189,45 @@ impl ModelCatalog {
     }
 
     fn db_path() -> Result<std::path::PathBuf> {
+        if let Ok(p) = std::env::var("ORION_CATALOG_DB") {
+            let path = std::path::PathBuf::from(p);
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            return Ok(path);
+        }
         let config_dir = dirs::config_dir()
             .unwrap_or_else(|| std::path::PathBuf::from("."))
             .join("orion");
         std::fs::create_dir_all(&config_dir)?;
         Ok(config_dir.join("catalog.db"))
+    }
+
+    fn column_exists(conn: &rusqlite::Connection, table: &str, column: &str) -> Result<bool> {
+        let mut stmt = conn.prepare(&format!("PRAGMA table_info({})", table))?;
+        let mut rows = stmt.query([])?;
+        while let Some(row) = rows.next()? {
+            let name: String = row.get(1)?;
+            if name == column {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    fn add_column_if_missing(
+        conn: &rusqlite::Connection,
+        table: &str,
+        column: &str,
+        definition: &str,
+    ) -> Result<()> {
+        if !Self::column_exists(conn, table, column)? {
+            conn.execute(
+                &format!("ALTER TABLE {} ADD COLUMN {} {}", table, column, definition),
+                [],
+            )?;
+        }
+        Ok(())
     }
 
     fn run_migrations(&self) -> Result<()> {
@@ -202,24 +241,20 @@ impl ModelCatalog {
             .unwrap_or(0);
 
         if version < 1 {
-            conn.execute_batch(
-                r#"
-                ALTER TABLE providers ADD COLUMN supports_streaming INTEGER NOT NULL DEFAULT 1;
-                ALTER TABLE providers ADD COLUMN supports_tools INTEGER NOT NULL DEFAULT 1;
-                ALTER TABLE providers ADD COLUMN supports_vision INTEGER NOT NULL DEFAULT 0;
-                "#,
-            )?;
+            Self::add_column_if_missing(&conn, "providers", "supports_streaming", "INTEGER NOT NULL DEFAULT 1")?;
+            Self::add_column_if_missing(&conn, "providers", "supports_tools", "INTEGER NOT NULL DEFAULT 1")?;
+            Self::add_column_if_missing(&conn, "providers", "supports_vision", "INTEGER NOT NULL DEFAULT 0")?;
             conn.execute("INSERT INTO provider_migrations (version) VALUES (1)", [])?;
         }
 
         if version < 2 {
-            conn.execute_batch(
-                r#"
-                ALTER TABLE models ADD COLUMN source TEXT;
-                ALTER TABLE models ADD COLUMN is_free INTEGER DEFAULT 0;
-                ALTER TABLE models ADD COLUMN is_local INTEGER DEFAULT 0;
-                ALTER TABLE models ADD COLUMN is_available INTEGER DEFAULT 1;
+            Self::add_column_if_missing(&conn, "models", "source", "TEXT")?;
+            Self::add_column_if_missing(&conn, "models", "is_free", "INTEGER DEFAULT 0")?;
+            Self::add_column_if_missing(&conn, "models", "is_local", "INTEGER DEFAULT 0")?;
+            Self::add_column_if_missing(&conn, "models", "is_available", "INTEGER DEFAULT 1")?;
 
+            conn.execute(
+                r#"
                 CREATE TABLE IF NOT EXISTS model_sources (
                     id TEXT PRIMARY KEY,
                     name TEXT NOT NULL,
@@ -229,6 +264,7 @@ impl ModelCatalog {
                     last_error TEXT
                 );
                 "#,
+                [],
             )?;
             conn.execute("INSERT INTO provider_migrations (version) VALUES (2)", [])?;
         }
@@ -781,5 +817,32 @@ impl ModelCatalog {
         ).unwrap();
         let rows = stmt.query_map([], |row| Self::row_to_model(row)).unwrap();
         rows.filter_map(|r| r.ok()).collect()
+    }
+
+    pub fn save_api_key(&self, provider_id: &str, api_key: &str) -> Result<()> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "INSERT OR REPLACE INTO config (key, value) VALUES (?1, ?2)",
+            params![format!("api_key:{}", provider_id), api_key],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_api_key(&self, provider_id: &str) -> Option<String> {
+        let conn = self.conn.lock();
+        conn.query_row(
+            "SELECT value FROM config WHERE key = ?1",
+            [format!("api_key:{}", provider_id)],
+            |row| row.get(0),
+        ).ok()
+    }
+
+    pub fn set_provider_enabled(&self, provider_id: &str, enabled: bool) -> Result<()> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "UPDATE providers SET enabled = ?1 WHERE id = ?2",
+            params![enabled as i32, provider_id],
+        )?;
+        Ok(())
     }
 }

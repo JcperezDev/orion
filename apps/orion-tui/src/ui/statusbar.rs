@@ -9,7 +9,7 @@ use ratatui::Frame;
 pub fn render(f: &mut Frame, state: &AppState, area: Rect, theme: &Theme) {
     let title = format!(
         " {} ORION  │  Model: {}  │  Tokens: {}  │  Cost: ${:.4}  │  MCPs: {} ",
-        "✦",
+        "*",
         state.current_model,
         state.token_count,
         state.cost_total,

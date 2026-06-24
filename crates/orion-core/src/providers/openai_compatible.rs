@@ -1,8 +1,10 @@
-use crate::providers::traits::{ChatRequest, ChatStream, LlmProvider};
+use crate::providers::traits::{ChatRequest, LlmProvider, TokenStream};
 use anyhow::Result;
 use async_trait::async_trait;
 use futures::StreamExt;
 use reqwest::Client;
+use tokio::sync::mpsc;
+use tokio_stream::wrappers::UnboundedReceiverStream;
 
 pub struct OpenAICompatibleProvider {
     id: String,
@@ -24,7 +26,7 @@ impl OpenAICompatibleProvider {
 
 #[async_trait]
 impl LlmProvider for OpenAICompatibleProvider {
-    async fn chat_stream(&self, request: ChatRequest) -> Result<ChatStream> {
+    async fn chat_stream(&self, request: ChatRequest) -> Result<TokenStream> {
         let messages: Vec<serde_json::Value> = request
             .messages
             .into_iter()
@@ -55,28 +57,43 @@ impl LlmProvider for OpenAICompatibleProvider {
             .send()
             .await?;
 
+        let (tx, rx) = mpsc::unbounded_channel::<Result<String>>();
         let mut stream = res.bytes_stream();
-        let mut full_response = String::new();
+        let mut buffer = String::new();
 
-        while let Some(item) = stream.next().await {
-            if let Ok(bytes) = item {
-                if let Ok(text) = String::from_utf8(bytes.to_vec()) {
-                    for line in text.lines() {
-                        if line.starts_with("data: ") {
-                            let data = &line[6..];
+        tokio::spawn(async move {
+            while let Some(item) = stream.next().await {
+                match item {
+                    Ok(bytes) => {
+                        buffer.push_str(&String::from_utf8_lossy(&bytes));
+                        while let Some(idx) = buffer.find('\n') {
+                            let line = buffer[..idx].to_string();
+                            buffer = buffer[idx + 1..].to_string();
+                            let line = line.trim_end_matches('\r');
+                            let data = match line.strip_prefix("data: ") {
+                                Some(d) => d,
+                                None => continue,
+                            };
                             if data == "[DONE]" {
-                                break;
+                                let _ = tx.send(Ok(String::new()));
+                                return;
                             }
-                            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(data) {
+                            if let Ok(parsed) =
+                                serde_json::from_str::<serde_json::Value>(data)
+                            {
                                 if let Some(choices) =
                                     parsed.get("choices").and_then(|c| c.as_array())
                                 {
                                     for choice in choices {
-                                        if let Some(delta) =
-                                            choice.get("delta").and_then(|d| d.get("content"))
+                                        if let Some(text) = choice
+                                            .get("delta")
+                                            .and_then(|d| d.get("content"))
+                                            .and_then(|t| t.as_str())
                                         {
-                                            if let Some(text) = delta.as_str() {
-                                                full_response.push_str(text);
+                                            if !text.is_empty()
+                                                && tx.send(Ok(text.to_string())).is_err()
+                                            {
+                                                return;
                                             }
                                         }
                                     }
@@ -84,13 +101,15 @@ impl LlmProvider for OpenAICompatibleProvider {
                             }
                         }
                     }
+                    Err(e) => {
+                        let _ = tx.send(Err(anyhow::anyhow!("stream error: {e}")));
+                        return;
+                    }
                 }
             }
-        }
+        });
 
-        Ok(ChatStream {
-            content: full_response,
-        })
+        Ok(Box::pin(UnboundedReceiverStream::new(rx)))
     }
 
     fn provider_id(&self) -> &str {

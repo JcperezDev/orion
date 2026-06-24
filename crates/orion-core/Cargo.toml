@@ -6,6 +6,7 @@ rust-version.workspace = true
 
 [dependencies]
 tokio.workspace = true
+tokio-stream.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -26,3 +27,7 @@ chrono.workspace = true
 toml.workspace = true
 futures.workspace = true
 async-trait.workspace = true
+axum.workspace = true
+tower.workspace = true
+tower-http.workspace = true
+async-stream.workspace = true

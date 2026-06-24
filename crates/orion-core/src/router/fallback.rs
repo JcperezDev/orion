@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use anyhow::Result;
 use crate::providers::traits::{LlmProvider, ChatRequest};
+use futures::StreamExt;
 
 pub struct FallbackChain {
     providers: Vec<(String, Arc<dyn LlmProvider>)>,
@@ -25,7 +26,24 @@ impl FallbackChain {
             req.model = model_id.clone();
 
             match provider.chat_stream(req).await {
-                Ok(stream) => return Ok(stream.content),
+                Ok(mut stream) => {
+                    let mut out = String::new();
+                    let mut errored = false;
+                    while let Some(chunk) = stream.next().await {
+                        match chunk {
+                            Ok(s) if s.is_empty() => break,
+                            Ok(s) => out.push_str(&s),
+                            Err(e) => {
+                                last_error = Some(e);
+                                errored = true;
+                                break;
+                            }
+                        }
+                    }
+                    if !errored {
+                        return Ok(out);
+                    }
+                }
                 Err(e) => {
                     last_error = Some(e);
                     continue;

@@ -1,1 +1,17 @@
 /target
+/dist
+/node_modules
+/.playwright-mcp
+/orion-ui-initial.png
+/settings-appearance.png
+/settings-appearance2.png
+/settings-custom.png
+/settings-default.png
+/settings-general.png
+.DS_Store
+*.log
+.env
+.env.local
+.tmp
+/tmp
+*.swp

@@ -29,6 +29,7 @@ impl TaskKind {
             "fast" | "quick" | "simple" => Some(TaskKind::Fast),
             "local" | "offline" | "free" => Some(TaskKind::Local),
             "tools" | "tool" | "function" => Some(TaskKind::Tools),
+            "general" | "chat" | "default" => Some(TaskKind::General),
             _ => None,
         }
     }

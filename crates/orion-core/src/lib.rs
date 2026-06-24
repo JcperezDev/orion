@@ -3,11 +3,18 @@ pub mod config;
 pub mod core;
 pub mod images;
 pub mod mcp;
+pub mod memory;
+pub mod middleware;
 pub mod models;
 pub mod providers;
 pub mod router;
+pub mod server;
 
 pub use config::Config;
+pub use memory::{MemoryStore, Settings as MemorySettings};
+pub use middleware::token_optimizer::OptimizerConfig;
+pub use middleware::{TokenOptimizer, TokenStats};
 pub use models::catalog::ModelCatalog;
 pub use providers::ProviderRegistry;
 pub use router::selector::{ModelRecommendation, TaskKind};
+pub use server::{build_router, AppState};

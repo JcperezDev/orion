@@ -1,11 +1,30 @@
 use orion_core::models::ModelCatalog;
 
+static INIT: std::sync::Once = std::sync::Once::new();
+
+fn setup_isolated_db() {
+    INIT.call_once(|| {
+        let tmp = std::env::temp_dir().join(format!(
+            "orion-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&tmp).unwrap();
+        std::env::set_var("ORION_CATALOG_DB", tmp.join("catalog.db"));
+        std::env::set_var("ORION_MEMORY_DB", tmp.join("memory.db"));
+    });
+}
+
 fn env_remove(key: &str) {
     std::env::remove_var(key);
 }
 
 #[test]
 fn test_catalog_providers_list() {
+    setup_isolated_db();
     let catalog = ModelCatalog::new().expect("Failed to create catalog");
     let providers = catalog.list_providers();
     assert!(
