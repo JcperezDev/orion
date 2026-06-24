@@ -26,7 +26,7 @@ const PROVIDERS: ProviderDef[] = [
   { id: 'mistral', name: 'Mistral', description: 'Mistral Large, Codestral', color: '#f7a800', requiresKey: true, dashboard: 'https://console.mistral.ai/api-keys/' },
   { id: 'together', name: 'Together AI', description: 'Llama, Qwen, DeepSeek models', color: '#10b981', requiresKey: true, dashboard: 'https://api.together.xyz/settings/api-keys' },
   { id: 'perplexity', name: 'Perplexity', description: 'Online AI with web search', color: '#20b2aa', requiresKey: true, dashboard: 'https://www.perplexity.ai/settings/api' },
-  { id: 'minimax', name: 'MiniMax', description: 'Abab6.5s, Hailuo AI', color: '#a855f7', requiresKey: true, dashboard: 'https://www.minimax.io/' },
+  { id: 'minimax', name: 'MiniMax', description: 'MiniMax-M3, MiniMax-Text-01', color: '#a855f7', requiresKey: true, dashboard: 'https://www.minimax.io/' },
   { id: 'ollama', name: 'Ollama', description: 'Local — sin API key', color: '#1D9E75', requiresKey: false },
   { id: 'custom', name: 'Custom', description: 'OpenAI-compatible endpoint', color: '#888888', requiresKey: true },
 ]
@@ -40,7 +40,7 @@ const DEFAULT_MODELS: Record<string, string> = {
   mistral: 'mistral:mistral-large-latest',
   together: 'together:meta-llama/Llama-3-70b-chat-hf',
   perplexity: 'perplexity:llama-3.1-sonar-large-128k-online',
-  minimax: 'minimax:abab6.5s',
+  minimax: 'minimax:MiniMax-M3',
   openrouter: 'openrouter:anthropic/claude-3.5-sonnet',
   ollama: 'ollama:llama3.1',
   custom: 'custom:default',

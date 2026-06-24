@@ -56,7 +56,7 @@ const DEFAULT_MODELS: Record<string, string> = {
   mistral: 'mistral:mistral-large-latest',
   together: 'together:meta-llama/Llama-3-70b-chat-hf',
   perplexity: 'perplexity:llama-3.1-sonar-large-128k-online',
-  minimax: 'minimax:abab6.5s',
+  minimax: 'minimax:MiniMax-M3',
   openrouter: 'openrouter:anthropic/claude-3.5-sonnet',
 }
 

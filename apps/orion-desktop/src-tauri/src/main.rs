@@ -251,6 +251,10 @@ async fn test_provider_connection(
             "https://api.perplexity.ai/models",
             vec![("Authorization", format!("Bearer {}", api_key))],
         ),
+        "minimax" => (
+            "https://api.minimaxi.chat/v1/models",
+            vec![("Authorization", format!("Bearer {}", api_key))],
+        ),
         "ollama" => (
             "http://localhost:11434/api/tags",
             vec![],
