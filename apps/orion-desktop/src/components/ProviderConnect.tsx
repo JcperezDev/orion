@@ -71,9 +71,9 @@ export default function ProviderConnect({ onConnected }: Props) {
   const selected = PROVIDERS.find(p => p.id === selectedProvider)
   const needsKey = selected?.requiresKey ?? true
 
-  async function handleTest() {
-    if (!selectedProvider) return
-    if (needsKey && !apiKey.trim()) return
+  async function runTest(): Promise<TestResult | null> {
+    if (!selectedProvider) return null
+    if (needsKey && !apiKey.trim()) return null
 
     setTesting(true)
     setError(null)
@@ -88,9 +88,12 @@ export default function ProviderConnect({ onConnected }: Props) {
       if (!result.success) {
         setError(result.error || 'Connection failed')
       }
+      return result
     } catch (err) {
+      const fail: TestResult = { success: false, models: [], error: String(err), latency_ms: 0 }
       setError(String(err))
-      setTestResult({ success: false, models: [], error: String(err), latency_ms: 0 })
+      setTestResult(fail)
+      return fail
     } finally {
       setTesting(false)
     }
@@ -100,11 +103,15 @@ export default function ProviderConnect({ onConnected }: Props) {
     if (!selectedProvider) return
     if (needsKey && !apiKey.trim()) return
 
-    if (!testResult?.success) {
-      await handleTest()
+    let result = testResult
+    if (!result?.success) {
+      result = await runTest()
     }
 
-    if (!testResult?.success && needsKey) return
+    if (!result?.success) {
+      setError(result?.error || 'Connection failed')
+      return
+    }
 
     setSaving(true)
     setError(null)
