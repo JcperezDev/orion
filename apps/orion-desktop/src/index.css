@@ -5,51 +5,112 @@
 @tailwind utilities;
 
 :root {
-  --background: oklch(0.14 0.012 250);
-  --foreground: oklch(0.88 0.012 250);
-  --surface: oklch(0.16 0.014 250);
-  --surface-2: oklch(0.18 0.016 250);
-  --surface-3: oklch(0.12 0.012 250);
-  --border: oklch(0.24 0.018 250);
-  --border-strong: oklch(0.32 0.025 250);
-  --muted: oklch(0.22 0.016 250);
-  --muted-foreground: oklch(0.55 0.02 250);
-  --subtle: oklch(0.36 0.02 250);
-  --text: oklch(0.9 0.01 250);
-  --text-dim: oklch(0.62 0.018 250);
-  --accent-blue: oklch(0.72 0.13 240);
-  --accent-blue-bg: oklch(0.24 0.06 250);
-  --accent-green: oklch(0.78 0.18 145);
-  --accent-green-bg: oklch(0.26 0.07 150);
-  --accent-purple: oklch(0.68 0.16 305);
-  --accent-purple-bg: oklch(0.24 0.08 305);
-  --accent-amber: oklch(0.78 0.15 75);
-  --accent-amber-bg: oklch(0.26 0.07 75);
-  --accent-red: oklch(0.68 0.2 25);
-  --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', ui-monospace, monospace;
+  /* Orion Dark (default) */
+  --bg-primary: #0a0a0c;
+  --bg-secondary: #111116;
+  --bg-tertiary: #18181f;
+  --border-subtle: #1e1e28;
+  --border-mid: #2a2a38;
+  --accent: #534AB7;
+  --accent-hover: #6259d4;
+  --accent-muted: #2d2a5e;
+  --accent-text: #a09ef0;
+  --green: #1D9E75;
+  --green-bg: #0d2b1f;
+  --green-text: #4ade9a;
+  --amber: #BA7517;
+  --amber-bg: #2b1f08;
+  --amber-text: #fbbf24;
+  --red: #A32D2D;
+  --red-bg: #2b0d0d;
+  --red-text: #f87171;
+  --text-primary: #e2e0f0;
+  --text-secondary: #8884a8;
+  --text-tertiary: #4a4866;
+  --font-mono: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace;
+
+  /* Legacy oklch aliases for tailwind */
+  --background: #0a0a0c;
+  --foreground: #e2e0f0;
+  --surface: #111116;
+  --surface-2: #18181f;
+  --surface-3: #0a0a0c;
+  --border: #1e1e28;
+  --border-strong: #2a2a38;
+  --muted: #1e1e28;
+  --muted-foreground: #8884a8;
+  --subtle: #4a4866;
+  --text: #e2e0f0;
+  --text-dim: #8884a8;
+  --accent-blue: #534AB7;
+  --accent-blue-bg: #2d2a5e;
+  --accent-green: #4ade9a;
+  --accent-green-bg: #0d2b1f;
+  --accent-purple: #a09ef0;
+  --accent-purple-bg: #2d2a5e;
+  --accent-amber: #fbbf24;
+  --accent-amber-bg: #2b1f08;
+  --accent-red: #f87171;
 }
 
 @layer base {
   * {
-    border-color: var(--border);
+    border-color: var(--border-subtle);
   }
   html, body, #root {
-    background: var(--background);
-    color: var(--foreground);
-    font-family: var(--font-mono);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, sans-serif;
     -webkit-font-smoothing: antialiased;
   }
 }
 
 .scroll-thin::-webkit-scrollbar { width: 4px; height: 4px; }
 .scroll-thin::-webkit-scrollbar-track { background: transparent; }
-.scroll-thin::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 2px; }
+.scroll-thin::-webkit-scrollbar-thumb { background: var(--border-mid); border-radius: 2px; }
 
 .grid-bg {
   background-image:
-    linear-gradient(var(--border) 1px, transparent 1px),
-    linear-gradient(90deg, var(--border) 1px, transparent 1px);
+    linear-gradient(var(--border-subtle) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border-subtle) 1px, transparent 1px);
   background-size: 32px 32px;
   background-position: -1px -1px;
   opacity: 0.35;
 }
+
+/* Compatibility shim for tailwind classes that reference the old variable names */
+.bg-background { background-color: var(--bg-primary); }
+.bg-surface { background-color: var(--bg-secondary); }
+.bg-surface-2 { background-color: var(--bg-tertiary); }
+.bg-surface-3 { background-color: var(--bg-primary); }
+.bg-bg-primary { background-color: var(--bg-primary); }
+.bg-bg-secondary { background-color: var(--bg-secondary); }
+.bg-bg-tertiary { background-color: var(--bg-tertiary); }
+.text-foreground { color: var(--text-primary); }
+.text-text { color: var(--text-primary); }
+.text-text-dim { color: var(--text-secondary); }
+.text-text-primary { color: var(--text-primary); }
+.text-text-secondary { color: var(--text-secondary); }
+.text-text-tertiary { color: var(--text-tertiary); }
+.text-subtle { color: var(--text-tertiary); }
+.text-accent { color: var(--accent); }
+.text-accent-text { color: var(--accent-text); }
+.text-accent-blue { color: var(--accent); }
+.text-accent-green { color: var(--green-text); }
+.text-accent-red { color: var(--red-text); }
+.text-accent-amber { color: var(--amber-text); }
+.text-accent-purple { color: var(--accent-text); }
+.bg-accent { background-color: var(--accent); }
+.bg-accent-muted { background-color: var(--accent-muted); }
+.bg-accent-blue { background-color: var(--accent); }
+.bg-accent-blue-bg { background-color: var(--accent-muted); }
+.bg-accent-green-bg { background-color: var(--green-bg); }
+.bg-accent-purple-bg { background-color: var(--accent-muted); }
+.bg-accent-amber-bg { background-color: var(--amber-bg); }
+.bg-accent-red { background-color: var(--red); }
+.border-border { border-color: var(--border-subtle); }
+.border-border-mid { border-color: var(--border-mid); }
+.border-accent { border-color: var(--accent); }
+.border-accent-blue { border-color: var(--accent); }
+.text-white { color: #ffffff; }
+.text-accent-blue\/30, .border-accent-blue\/30 { border-color: rgba(83, 74, 183, 0.3); }

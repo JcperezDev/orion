@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "identifier": "com.orion.agent",
   "build": {
-    "frontendDist": "../../../apps/orion-ui/dist"
+    "frontendDist": "../dist"
   },
   "app": {
     "withGlobalTauri": true,

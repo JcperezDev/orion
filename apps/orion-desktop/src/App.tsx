@@ -8,8 +8,10 @@ import {
   Database,
   Terminal,
   ArrowUp,
+  Settings as SettingsIcon,
 } from 'lucide-react'
 import ProviderConnect from './components/ProviderConnect'
+import SettingsView from './components/SettingsView'
 
 interface Provider {
   id: string
@@ -19,7 +21,7 @@ interface Provider {
   error?: string
 }
 
-type View = 'chat' | 'memory' | 'agents' | 'mcp' | 'models'
+type View = 'chat' | 'memory' | 'agents' | 'mcp' | 'models' | 'settings'
 
 interface ChatMessage {
   id: string
@@ -34,6 +36,7 @@ const navItems = [
   { icon: Boxes, label: 'Agents', color: 'text-accent-green', view: 'agents' as View, badge: null },
   { icon: Cpu, label: 'MCP Hub', color: 'text-accent-amber', view: 'mcp' as View, badge: null },
   { icon: Database, label: 'Models', color: 'text-text-dim', view: 'models' as View, badge: null },
+  { icon: SettingsIcon, label: 'Settings', color: 'text-text-dim', view: 'settings' as View, badge: null },
 ]
 
 const COMMANDS = [
@@ -517,6 +520,10 @@ export default function App() {
                   )}
                 </form>
               </div>
+            </main>
+          ) : activeView === 'settings' ? (
+            <main className="flex flex-1 min-h-0 overflow-hidden rounded-lg border border-border bg-surface/40 backdrop-blur">
+              <SettingsView />
             </main>
           ) : (
             <main className="flex flex-1 min-h-0 overflow-hidden rounded-lg border border-border bg-surface/40 backdrop-blur">

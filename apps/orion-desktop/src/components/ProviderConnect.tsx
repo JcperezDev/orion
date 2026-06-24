@@ -1,251 +1,567 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { invoke } from '@tauri-apps/api/core'
-import { ArrowUp, ExternalLink, Check, X, Loader2 } from 'lucide-react'
+import { ArrowUp, ExternalLink, Check, X, Loader2, Eye, EyeOff } from 'lucide-react'
 
 interface Props {
   onConnected: () => void
 }
 
-const PROVIDERS = [
-  { id: 'openrouter', name: 'OpenRouter', website: 'https://openrouter.ai', recommended: true, description: 'Aggregates multiple AI providers', color: 'var(--accent-blue)' },
-  { id: 'openai', name: 'OpenAI', website: 'https://platform.openai.com', description: 'GPT-4, GPT-4o, GPT-4o-mini', color: 'var(--accent-green)' },
-  { id: 'anthropic', name: 'Anthropic', website: 'https://console.anthropic.com', description: 'Claude 3.5 Sonnet, Opus, Haiku', color: 'var(--accent-amber)' },
-  { id: 'google', name: 'Google Gemini', website: 'https://aistudio.google.com', description: 'Gemini 1.5, Gemini 2.0', color: 'var(--accent-purple)' },
-  { id: 'deepseek', name: 'DeepSeek', website: 'https://platform.deepseek.com', description: 'DeepSeek V3, DeepSeek Coder', color: 'var(--accent-blue)' },
-  { id: 'groq', name: 'Groq', website: 'https://console.groq.com', description: 'Fast inference with Llama, Mixtral', color: 'var(--accent-purple)' },
-  { id: 'mistral', name: 'Mistral', website: 'https://console.mistral.ai', description: 'Mistral Large, Codestral', color: 'var(--accent-amber)' },
-  { id: 'together', name: 'Together AI', website: 'https://together.ai', description: 'Llama, Qwen, DeepSeek models', color: 'var(--accent-green)' },
-  { id: 'perplexity', name: 'Perplexity', website: 'https://perplexity.ai', description: 'Online AI with web search', color: 'var(--accent-blue)' },
-  { id: 'minimax', name: 'MiniMax', website: 'https://platform.minimax.chat', description: 'Abab6.5s, Hailuo AI', color: 'var(--accent-purple)' },
+interface ProviderDef {
+  id: string
+  name: string
+  description: string
+  color: string
+  recommended?: boolean
+  requiresKey: boolean
+  dashboard?: string
+}
+
+const PROVIDERS: ProviderDef[] = [
+  { id: 'openrouter', name: 'OpenRouter', description: 'Aggregates multiple AI providers', color: '#534AB7', recommended: true, requiresKey: true, dashboard: 'https://openrouter.ai/keys' },
+  { id: 'openai', name: 'OpenAI', description: 'GPT-4, GPT-4o, GPT-4o-mini', color: '#10a37f', requiresKey: true, dashboard: 'https://platform.openai.com/api-keys' },
+  { id: 'anthropic', name: 'Anthropic', description: 'Claude 3.5 Sonnet, Opus, Haiku', color: '#d4a574', requiresKey: true, dashboard: 'https://console.anthropic.com/keys' },
+  { id: 'google', name: 'Google', description: 'Gemini 1.5, Gemini 2.0', color: '#4285f4', requiresKey: true, dashboard: 'https://aistudio.google.com/app/apikey' },
+  { id: 'deepseek', name: 'DeepSeek', description: 'DeepSeek V3, DeepSeek Coder', color: '#4d9eff', requiresKey: true, dashboard: 'https://platform.deepseek.com/api_keys' },
+  { id: 'groq', name: 'Groq', description: 'Fast inference with Llama, Mixtral', color: '#f55036', requiresKey: true, dashboard: 'https://console.groq.com/keys' },
+  { id: 'mistral', name: 'Mistral', description: 'Mistral Large, Codestral', color: '#f7a800', requiresKey: true, dashboard: 'https://console.mistral.ai/api-keys/' },
+  { id: 'together', name: 'Together AI', description: 'Llama, Qwen, DeepSeek models', color: '#10b981', requiresKey: true, dashboard: 'https://api.together.xyz/settings/api-keys' },
+  { id: 'perplexity', name: 'Perplexity', description: 'Online AI with web search', color: '#20b2aa', requiresKey: true, dashboard: 'https://www.perplexity.ai/settings/api' },
+  { id: 'minimax', name: 'MiniMax', description: 'Abab6.5s, Hailuo AI', color: '#a855f7', requiresKey: true, dashboard: 'https://www.minimax.io/' },
+  { id: 'ollama', name: 'Ollama', description: 'Local — sin API key', color: '#1D9E75', requiresKey: false },
+  { id: 'custom', name: 'Custom', description: 'OpenAI-compatible endpoint', color: '#888888', requiresKey: true },
 ]
 
-function Pill({ label, tone }: { label: string; tone: 'blue' | 'green' | 'purple' | 'amber' }) {
-  const map = {
-    blue: 'text-accent-blue bg-accent-blue-bg border-accent-blue/30',
-    green: 'text-accent-green bg-accent-green-bg border-accent-green/30',
-    purple: 'text-accent-purple bg-accent-purple-bg border-accent-purple/30',
-    amber: 'text-accent-amber bg-accent-amber-bg border-accent-amber/30',
-  }
-  return (
-    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[10px] tracking-[0.12em] uppercase ${map[tone]}`}>
-      <span className="size-1.5 rounded-full bg-current" />
-      {label}
-    </span>
-  )
+const DEFAULT_MODELS: Record<string, string> = {
+  openai: 'openai:gpt-4o',
+  anthropic: 'anthropic:claude-3-5-sonnet-20241022',
+  google: 'google:gemini-1.5-pro',
+  deepseek: 'deepseek:deepseek-chat',
+  groq: 'groq:llama-3.1-70b-versatile',
+  mistral: 'mistral:mistral-large-latest',
+  together: 'together:meta-llama/Llama-3-70b-chat-hf',
+  perplexity: 'perplexity:llama-3.1-sonar-large-128k-online',
+  minimax: 'minimax:abab6.5s',
+  openrouter: 'openrouter:anthropic/claude-3.5-sonnet',
+  ollama: 'ollama:llama3.1',
+  custom: 'custom:default',
+}
+
+interface TestResult {
+  success: boolean
+  models: string[]
+  error?: string
+  latency_ms: number
 }
 
 export default function ProviderConnect({ onConnected }: Props) {
   const [selectedProvider, setSelectedProvider] = useState<string | null>(null)
   const [apiKey, setApiKey] = useState('')
+  const [showKey, setShowKey] = useState(false)
   const [testing, setTesting] = useState(false)
-  const [syncing, setSyncing] = useState(false)
+  const [testResult, setTestResult] = useState<TestResult | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [success, setSuccess] = useState(false)
+  const [saving, setSaving] = useState(false)
 
-  async function handleConnect() {
-    if (!selectedProvider || !apiKey.trim()) return
+  useEffect(() => {
+    setApiKey('')
+    setTestResult(null)
+    setError(null)
+  }, [selectedProvider])
+
+  const selected = PROVIDERS.find(p => p.id === selectedProvider)
+  const needsKey = selected?.requiresKey ?? true
+
+  async function handleTest() {
+    if (!selectedProvider) return
+    if (needsKey && !apiKey.trim()) return
 
     setTesting(true)
     setError(null)
-    setSuccess(false)
+    setTestResult(null)
 
     try {
-      const result = await invoke<{ success: boolean; error?: string }>('test_provider_connection', {
+      const result = await invoke<TestResult>('test_provider_connection', {
         providerId: selectedProvider,
-        apiKey: apiKey.trim()
+        apiKey: apiKey.trim(),
       })
-
-      if (result.success) {
-        setSuccess(true)
-        setSyncing(true)
-        try {
-          await invoke('save_provider_api_key', { 
-            providerId: selectedProvider, 
-            apiKey: apiKey.trim() 
-          })
-          await invoke('reload_registry')
-          
-          const defaultModels: Record<string, string> = {
-            openai: 'openai:gpt-4o',
-            anthropic: 'anthropic:claude-3-5-sonnet-20241022',
-            google: 'google:gemini-1.5-pro',
-            deepseek: 'deepseek:deepseek-chat',
-            groq: 'groq:llama-3.1-70b-versatile',
-            mistral: 'mistral:mistral-large-latest',
-            together: 'together:meta-llama/Llama-3-70b-chat-hf',
-            perplexity: 'perplexity:llama-3.1-sonar-large-128k-online',
-            minimax: 'minimax:abab6.5s',
-            openrouter: 'openrouter:anthropic/claude-3.5-sonnet',
-          }
-          
-          const defaultModel = defaultModels[selectedProvider]
-          if (defaultModel) {
-            await invoke('set_default_model', { modelId: defaultModel })
-          }
-        } catch (saveErr) {
-          console.warn('Failed to setup:', saveErr)
-        }
-        setSyncing(false)
-        onConnected()
-      } else {
-        setError(result.error || 'Connection failed. Check your API key.')
+      setTestResult(result)
+      if (!result.success) {
+        setError(result.error || 'Connection failed')
       }
     } catch (err) {
       setError(String(err))
+      setTestResult({ success: false, models: [], error: String(err), latency_ms: 0 })
     } finally {
       setTesting(false)
     }
   }
 
-  const selected = PROVIDERS.find(p => p.id === selectedProvider)
+  async function handleConnect() {
+    if (!selectedProvider) return
+    if (needsKey && !apiKey.trim()) return
+
+    if (!testResult?.success) {
+      await handleTest()
+    }
+
+    if (!testResult?.success && needsKey) return
+
+    setSaving(true)
+    setError(null)
+
+    try {
+      if (needsKey) {
+        await invoke('save_provider_api_key', {
+          providerId: selectedProvider,
+          apiKey: apiKey.trim(),
+        })
+      } else {
+        await invoke('set_provider_enabled', { providerId: selectedProvider, enabled: true }).catch(() => {})
+      }
+      await invoke('reload_registry')
+
+      const defaultModel = DEFAULT_MODELS[selectedProvider]
+      if (defaultModel) {
+        try {
+          await invoke('set_default_model', { modelId: defaultModel })
+        } catch {}
+      }
+
+      onConnected()
+    } catch (err) {
+      setError(String(err))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function handleTryAgain() {
+    setTestResult(null)
+    setError(null)
+    setApiKey('')
+  }
 
   return (
-    <div className="relative min-h-screen w-full overflow-hidden bg-background text-foreground font-mono">
+    <div className="relative min-h-screen w-full overflow-hidden bg-bg-primary text-text-primary" style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}>
       <div className="grid-bg pointer-events-none absolute inset-0" />
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,oklch(0.3_0.1_260/0.25),transparent_60%)]" />
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(83,74,183,0.18),transparent_60%)]" />
 
       <div className="relative mx-auto flex min-h-screen max-w-[900px] flex-col px-6 py-12">
         {/* Header */}
         <header className="mb-10">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="relative grid size-10 place-items-center">
-              <span className="absolute inset-0 rounded-md border border-accent-blue/40" />
-              <span className="absolute inset-2 rounded-sm border border-accent-blue/20 rotate-45" />
-              <span className="relative size-2 rounded-full bg-accent-blue" />
-            </div>
-            <div className="text-xl font-semibold tracking-[0.35em] text-text">ORION</div>
+          <div className="flex items-center gap-3 mb-3">
+            <span className="size-2 rounded-full" style={{ background: 'var(--accent)' }} />
+            <h1
+              className="text-text-primary"
+              style={{
+                fontFamily: "'JetBrains Mono', monospace",
+                letterSpacing: '0.15em',
+                fontWeight: 700,
+                fontSize: '24px',
+              }}
+            >
+              ORION
+            </h1>
           </div>
-          <p className="text-subtle text-sm">Bring your own keys. Route across providers. Run MCPs locally.</p>
+          <p
+            className="text-text-secondary"
+            style={{
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: '13px',
+            }}
+          >
+            Bring your own keys. Route across providers. Run MCPs locally.
+          </p>
         </header>
 
-        {/* Step 1: Choose provider */}
-        <div className="mb-8">
+        {/* Step 01 — Choose provider */}
+        <section className="mb-8">
           <div className="mb-3 flex items-center gap-2">
-            <span className="text-[10px] tracking-[0.2em] uppercase text-accent-blue">01</span>
-            <span className="text-[11px] tracking-[0.15em] uppercase text-text">Choose your AI provider</span>
+            <span
+              style={{
+                color: 'var(--accent)',
+                fontFamily: "'JetBrains Mono', monospace",
+                fontSize: '11px',
+                letterSpacing: '0.08em',
+                fontWeight: 600,
+              }}
+            >
+              01
+            </span>
+            <span
+              className="text-text-primary"
+              style={{
+                fontFamily: "'JetBrains Mono', monospace",
+                fontSize: '11px',
+                letterSpacing: '0.06em',
+                textTransform: 'uppercase',
+                fontWeight: 600,
+              }}
+            >
+              Choose your AI provider
+            </span>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            {PROVIDERS.map((provider) => (
-              <button
-                key={provider.id}
-                onClick={() => {
-                  setSelectedProvider(provider.id)
-                  setError(null)
-                  setSuccess(false)
-                }}
-                className={`flex items-start gap-3 rounded-lg border p-4 text-left transition ${
-                  selectedProvider === provider.id
-                    ? 'border-accent-blue/50 bg-accent-blue-bg/30'
-                    : 'border-border bg-surface/40 hover:bg-surface-2/40'
-                }`}
-              >
-                <span className="mt-0.5 size-2 rounded-full" style={{ background: provider.color }} />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-medium text-text">{provider.name}</span>
-                    {provider.recommended && <Pill label="recommended" tone="blue" />}
-                  </div>
-                  <p className="mt-1 text-[10px] text-subtle line-clamp-1">{provider.description}</p>
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
 
-        {/* Step 2: API Key */}
-        {selectedProvider && (
-          <div className="mb-8">
-            <div className="mb-3 flex items-center gap-2">
-              <span className="text-[10px] tracking-[0.2em] uppercase text-accent-blue">02</span>
-              <span className="text-[11px] tracking-[0.15em] uppercase text-text">Enter your API key</span>
-            </div>
-            <div className="rounded-lg border border-border bg-surface/40 p-4">
-              <div className="mb-3 flex items-center justify-between">
-                <span className="text-xs text-text-dim">{selected?.name} API Key</span>
-                <a
-                  href={selected?.website}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-1 text-[10px] text-accent-blue hover:underline"
+          <div className="grid grid-cols-2 gap-3">
+            {PROVIDERS.map((provider) => {
+              const isSelected = selectedProvider === provider.id
+              return (
+                <button
+                  key={provider.id}
+                  type="button"
+                  onClick={() => setSelectedProvider(provider.id)}
+                  className="relative flex items-start gap-3 text-left transition"
+                  style={{
+                    padding: '14px 16px',
+                    borderRadius: '8px',
+                    background: isSelected ? 'var(--accent-muted)' : 'rgba(17,17,22,0.4)',
+                    border: isSelected
+                      ? '0.5px solid var(--accent)'
+                      : '0.5px solid var(--border-subtle)',
+                    transitionDuration: '150ms',
+                    cursor: 'pointer',
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isSelected) e.currentTarget.style.background = 'var(--bg-tertiary)'
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isSelected) e.currentTarget.style.background = 'rgba(17,17,22,0.4)'
+                  }}
                 >
-                  Get API key <ExternalLink className="size-3" />
-                </a>
-              </div>
-              <input
-                type="password"
-                value={apiKey}
-                onChange={(e) => {
-                  setApiKey(e.target.value)
-                  setError(null)
-                  setSuccess(false)
+                  {isSelected && (
+                    <span
+                      className="absolute right-2 top-2 grid place-items-center"
+                      style={{
+                        width: '16px',
+                        height: '16px',
+                        borderRadius: '50%',
+                        background: 'var(--accent)',
+                      }}
+                    >
+                      <Check className="size-3 text-white" />
+                    </span>
+                  )}
+                  <span
+                    className="mt-0.5 rounded-full flex-shrink-0"
+                    style={{ width: '8px', height: '8px', background: provider.color }}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span
+                        className="text-text-primary"
+                        style={{ fontSize: '13px', fontWeight: 500 }}
+                      >
+                        {provider.name}
+                      </span>
+                      {provider.recommended && (
+                        <span
+                          className="text-accent-text"
+                          style={{
+                            background: 'var(--accent-muted)',
+                            border: '0.5px solid var(--accent)',
+                            fontSize: '10px',
+                            letterSpacing: '0.06em',
+                            padding: '2px 8px',
+                            borderRadius: '20px',
+                            textTransform: 'uppercase',
+                            fontWeight: 600,
+                            fontFamily: "'JetBrains Mono', monospace",
+                          }}
+                        >
+                          Recommended
+                        </span>
+                      )}
+                    </div>
+                    <p
+                      className="text-text-secondary truncate"
+                      style={{ fontSize: '11px' }}
+                    >
+                      {provider.description}
+                    </p>
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+        </section>
+
+        {/* Step 02 — API Key */}
+        {selectedProvider && needsKey && (
+          <section className="mb-8">
+            <div className="mb-3 flex items-center gap-2">
+              <span
+                style={{
+                  color: 'var(--accent)',
+                  fontFamily: "'JetBrains Mono', monospace",
+                  fontSize: '11px',
+                  letterSpacing: '0.08em',
+                  fontWeight: 600,
                 }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault()
-                    handleConnect()
-                  }
+              >
+                02
+              </span>
+              <span
+                className="text-text-primary"
+                style={{
+                  fontFamily: "'JetBrains Mono', monospace",
+                  fontSize: '11px',
+                  letterSpacing: '0.06em',
+                  textTransform: 'uppercase',
+                  fontWeight: 600,
                 }}
-                placeholder="sk-..."
-                className="w-full rounded border border-border bg-[var(--surface)] px-4 py-3 text-xs text-[var(--foreground)] placeholder:text-[var(--muted)] focus:border-accent-blue/60 focus:outline-none font-mono"
-              />
-              <p className="mt-2 text-[10px] text-subtle">Your API key is stored locally and never sent to our servers.</p>
+              >
+                Enter your API key
+              </span>
             </div>
+            <div
+              style={{
+                borderRadius: '8px',
+                border: '0.5px solid var(--border-subtle)',
+                background: 'rgba(17,17,22,0.4)',
+                padding: '16px',
+              }}
+            >
+              <div className="mb-3 flex items-center justify-between">
+                <span
+                  className="text-text-secondary"
+                  style={{ fontSize: '12px' }}
+                >
+                  {selected?.name} API Key
+                </span>
+                {selected?.dashboard && (
+                  <a
+                    href={selected.dashboard}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1 hover:underline"
+                    style={{ color: 'var(--accent)', fontSize: '11px' }}
+                  >
+                    Get API key
+                    <ExternalLink className="size-3" />
+                  </a>
+                )}
+              </div>
+              <div className="relative">
+                <input
+                  type={showKey ? 'text' : 'password'}
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      handleConnect()
+                    }
+                  }}
+                  placeholder="sk-..."
+                  autoFocus
+                  className="w-full focus:outline-none"
+                  style={{
+                    background: 'var(--bg-primary)',
+                    border: '0.5px solid var(--border-subtle)',
+                    borderRadius: '6px',
+                    padding: '12px 44px 12px 14px',
+                    color: 'var(--text-primary)',
+                    fontFamily: "'JetBrains Mono', monospace",
+                    fontSize: '12px',
+                  }}
+                  onFocus={(e) => {
+                    e.currentTarget.style.borderColor = 'var(--accent)'
+                  }}
+                  onBlur={(e) => {
+                    e.currentTarget.style.borderColor = 'var(--border-subtle)'
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowKey(s => !s)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-text-secondary hover:text-text-primary"
+                  aria-label="Toggle visibility"
+                >
+                  {showKey ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                </button>
+              </div>
+              <p
+                className="mt-3 text-text-tertiary"
+                style={{ fontSize: '11px' }}
+              >
+                Your API key is stored locally and never sent to our servers.
+              </p>
+            </div>
+          </section>
+        )}
+
+        {/* Test result */}
+        {testResult && (
+          <div
+            className="mb-6"
+            style={{
+              borderRadius: '8px',
+              border: `0.5px solid ${testResult.success ? 'var(--green)' : 'var(--red)'}`,
+              background: testResult.success ? 'var(--green-bg)' : 'var(--red-bg)',
+              padding: '12px 16px',
+            }}
+          >
+            <div
+              className="flex items-center gap-2"
+              style={{
+                color: testResult.success ? 'var(--green-text)' : 'var(--red-text)',
+                fontSize: '12px',
+                fontWeight: 500,
+              }}
+            >
+              {testResult.success ? <Check className="size-4" /> : <X className="size-4" />}
+              {testResult.success
+                ? `Connected — ${testResult.models.length} models available (${testResult.latency_ms}ms)`
+                : (testResult.error || 'Connection failed')}
+            </div>
+            {testResult.success && testResult.models.length > 0 && (
+              <div className="mt-2 ml-6 space-y-1">
+                {testResult.models.slice(0, 3).map((m) => (
+                  <div
+                    key={m}
+                    className="text-text-secondary"
+                    style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '11px' }}
+                  >
+                    {m}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
         {/* Error */}
-        {error && (
-          <div className="mb-6 rounded-lg border border-accent-red/30 bg-accent-red/10 px-4 py-3">
-            <div className="flex items-center gap-2 text-xs text-accent-red">
+        {error && !testResult && (
+          <div
+            className="mb-6"
+            style={{
+              borderRadius: '8px',
+              border: '0.5px solid var(--red)',
+              background: 'var(--red-bg)',
+              padding: '12px 16px',
+            }}
+          >
+            <div
+              className="flex items-center gap-2"
+              style={{ color: 'var(--red-text)', fontSize: '12px' }}
+            >
               <X className="size-4" />
               {error}
             </div>
           </div>
         )}
 
-        {/* Success */}
-        {success && (
-          <div className="mb-6 rounded-lg border border-accent-green/30 bg-accent-green/10 px-4 py-3">
-            <div className="flex items-center gap-2 text-xs text-accent-green">
-              <Check className="size-4" />
-              Connection successful! Syncing models...
-            </div>
-          </div>
-        )}
-
-        {/* Step 3: Connect */}
+        {/* Step 03 — Test connection */}
         {selectedProvider && (
-          <div className="mb-8">
+          <section className="mb-8">
             <div className="mb-3 flex items-center gap-2">
-              <span className="text-[10px] tracking-[0.2em] uppercase text-accent-blue">03</span>
-              <span className="text-[11px] tracking-[0.15em] uppercase text-text">Test connection</span>
+              <span
+                style={{
+                  color: 'var(--accent)',
+                  fontFamily: "'JetBrains Mono', monospace",
+                  fontSize: '11px',
+                  letterSpacing: '0.08em',
+                  fontWeight: 600,
+                }}
+              >
+                03
+              </span>
+              <span
+                className="text-text-primary"
+                style={{
+                  fontFamily: "'JetBrains Mono', monospace",
+                  fontSize: '11px',
+                  letterSpacing: '0.06em',
+                  textTransform: 'uppercase',
+                  fontWeight: 600,
+                }}
+              >
+                Test connection
+              </span>
             </div>
-            <button
-              onClick={handleConnect}
-              disabled={!apiKey.trim() || testing || syncing}
-              className="flex w-full items-center justify-center gap-2 rounded-lg border border-accent-blue/40 bg-accent-blue-bg px-6 py-3 text-xs font-medium text-accent-blue transition hover:border-accent-blue/70 disabled:opacity-50"
-            >
-              {testing ? (
+            <div className="flex gap-3">
+              {testResult?.success ? (
                 <>
-                  <Loader2 className="size-4 animate-spin" />
-                  Testing connection...
-                </>
-              ) : syncing ? (
-                <>
-                  <Loader2 className="size-4 animate-spin" />
-                  Syncing models...
+                  <button
+                    type="button"
+                    onClick={handleConnect}
+                    disabled={saving}
+                    className="flex-1 flex items-center justify-center gap-2 transition"
+                    style={{
+                      background: 'var(--accent)',
+                      color: 'white',
+                      borderRadius: '8px',
+                      padding: '12px 24px',
+                      fontSize: '13px',
+                      fontWeight: 500,
+                      border: 'none',
+                      cursor: saving ? 'wait' : 'pointer',
+                      opacity: saving ? 0.6 : 1,
+                    }}
+                  >
+                    {saving ? (
+                      <>
+                        <Loader2 className="size-4 animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        Continue
+                        <ArrowUp className="size-4" />
+                      </>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleTryAgain}
+                    className="px-6 transition"
+                    style={{
+                      background: 'transparent',
+                      color: 'var(--text-secondary)',
+                      border: '0.5px solid var(--border-mid)',
+                      borderRadius: '8px',
+                      padding: '12px 24px',
+                      fontSize: '13px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Try again
+                  </button>
                 </>
               ) : (
-                <>
-                  <ArrowUp className="size-4" />
-                  Connect
-                </>
+                <button
+                  type="button"
+                  onClick={handleConnect}
+                  disabled={testing || saving || (needsKey && !apiKey.trim())}
+                  className="flex-1 flex items-center justify-center gap-2 transition"
+                  style={{
+                    background: 'var(--accent-muted)',
+                    color: 'var(--accent-text)',
+                    borderRadius: '8px',
+                    padding: '12px 24px',
+                    fontSize: '13px',
+                    fontWeight: 500,
+                    border: '0.5px solid var(--accent)',
+                    cursor: (testing || saving || (needsKey && !apiKey.trim())) ? 'not-allowed' : 'pointer',
+                    opacity: (testing || saving || (needsKey && !apiKey.trim())) ? 0.5 : 1,
+                  }}
+                >
+                  {testing ? (
+                    <>
+                      <Loader2 className="size-4 animate-spin" />
+                      Testing connection...
+                    </>
+                  ) : (
+                    <>
+                      Connect
+                      <ArrowUp className="size-4" />
+                    </>
+                  )}
+                </button>
               )}
-            </button>
-          </div>
+            </div>
+          </section>
         )}
-
-
       </div>
     </div>
   )
