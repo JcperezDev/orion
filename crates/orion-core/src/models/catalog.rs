@@ -875,6 +875,15 @@ impl ModelCatalog {
         ).ok()
     }
 
+    pub fn delete_api_key(&self, provider_id: &str) -> Result<()> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "DELETE FROM config WHERE key = ?1",
+            [format!("api_key:{}", provider_id)],
+        )?;
+        Ok(())
+    }
+
     pub fn set_provider_enabled(&self, provider_id: &str, enabled: bool) -> Result<()> {
         let conn = self.conn.lock();
         conn.execute(

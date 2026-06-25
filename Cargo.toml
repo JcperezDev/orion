@@ -4,6 +4,7 @@ members = [
     "crates/orion-core",
     "apps/orion-tui",
     "apps/orion-server",
+    "apps/orion-cli",
     "apps/orion-desktop/src-tauri",
 ] 
 

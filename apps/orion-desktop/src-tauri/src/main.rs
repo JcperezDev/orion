@@ -574,12 +574,15 @@ fn delete_provider_api_key(
 ) -> Result<(), String> {
     state
         .catalog
-        .save_api_key(&provider_id, "")
+        .delete_api_key(&provider_id)
         .map_err(|e| e.to_string())?;
     state
         .catalog
         .set_provider_enabled(&provider_id, false)
         .map_err(|e| e.to_string())?;
+    state
+        .registry
+        .remove_provider(&provider_id);
     Ok(())
 }
 
