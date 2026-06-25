@@ -6,6 +6,7 @@ import Sidebar from './components/Sidebar'
 import ChatView from './components/ChatView'
 import OnboardingOverlay from './components/OnboardingOverlay'
 import SettingsView from './components/SettingsView'
+import { PermissionDialog } from './components/PermissionDialog'
 
 type View = 'chat' | 'settings'
 
@@ -67,12 +68,10 @@ export default function App() {
 
   const handleOnboardingClose = async () => {
     setShowOnboarding(false)
-    // Re-check in case the user connected a provider
     try {
       const connected = await invoke<Provider[]>('get_connected_providers')
       if (connected.length === 0) {
         // User closed without connecting — keep overlay closed but allow re-opening
-        // (could be triggered from Settings if we add a "connect provider" button there)
       }
     } catch {}
   }
@@ -91,6 +90,7 @@ export default function App() {
         </main>
       </div>
       {showOnboarding && <OnboardingOverlay onClose={handleOnboardingClose} />}
+      <PermissionDialog />
     </div>
   )
 }

@@ -373,6 +373,7 @@ Providers: openrouter, openai, anthropic, ollama, deepseek, groq, mistral, toget
             let messages = vec![Message {
                 role: "user".to_string(),
                 content: content.to_string(),
+                ..Default::default()
             }];
 
             let request = ChatRequest {

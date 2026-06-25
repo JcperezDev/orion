@@ -1,20 +1,92 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use orion_core::core::dispatch::{DispatchConfig, DispatchEvent, Dispatcher};
+use orion_core::memory::project::{merged_system_prompt, ProjectMemoryLoader};
 use orion_core::models::catalog::{ModelInfo, ProviderInfo, Session};
+use orion_core::permissions::{Action as PermissionAction, PermissionConfig, PermissionEngine};
 use orion_core::providers::registry::ProviderRegistry;
 use orion_core::providers::traits::Message;
+use orion_core::tools::{
+    builtin_registry, ApprovalChannel, ApprovalRequest, ApprovalResponse, ToolRegistry,
+};
 use orion_core::ModelCatalog;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Instant;
-use tauri::{Emitter, State};
+use tauri::{AppHandle, Emitter, State};
 use futures::StreamExt;
+use tokio::sync::oneshot;
 
 pub struct AppState {
     pub catalog: Arc<ModelCatalog>,
     pub registry: Arc<ProviderRegistry>,
     pub default_model: Mutex<Option<String>>,
+    pub tools: Arc<ToolRegistry>,
+    pub permissions: Arc<PermissionEngine>,
+    pub dispatcher: Arc<Dispatcher>,
+    pub project_memory: StdMutex<Vec<orion_core::memory::project::ProjectMemory>>,
+    pub approvals: Arc<ApprovalBridge>,
+}
+
+pub struct ApprovalBridge {
+    next_id: AtomicU64,
+    pending: Mutex<std::collections::HashMap<u64, oneshot::Sender<ApprovalResponse>>>,
+}
+
+impl ApprovalBridge {
+    pub fn new() -> Self {
+        Self {
+            next_id: AtomicU64::new(1),
+            pending: Mutex::new(std::collections::HashMap::new()),
+        }
+    }
+
+    pub fn create(&self) -> u64 {
+        self.next_id.fetch_add(1, Ordering::SeqCst)
+    }
+
+    pub fn register(&self, id: u64, tx: oneshot::Sender<ApprovalResponse>) {
+        self.pending.lock().insert(id, tx);
+    }
+
+    pub fn resolve(&self, id: u64, decision: ApprovalResponse) -> bool {
+        if let Some(tx) = self.pending.lock().remove(&id) {
+            let _ = tx.send(decision);
+            true
+        } else {
+            false
+        }
+    }
+}
+
+pub struct TauriApprovalChannel {
+    pub app: AppHandle,
+    pub bridge: Arc<ApprovalBridge>,
+}
+
+#[async_trait::async_trait]
+impl ApprovalChannel for TauriApprovalChannel {
+    async fn request_approval(&self, request: ApprovalRequest) -> ApprovalResponse {
+        let id = self.bridge.create();
+        let (tx, rx) = oneshot::channel();
+        self.bridge.register(id, tx);
+
+        let payload = serde_json::json!({
+            "id": id,
+            "tool": request.tool_name,
+            "action": request.action,
+            "pattern": request.matched_pattern,
+            "arguments": request.arguments,
+        });
+        let _ = self.app.emit("orion://approval_request", payload);
+
+        match rx.await {
+            Ok(decision) => decision,
+            Err(_) => ApprovalResponse::Deny,
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -260,13 +332,10 @@ async fn test_provider_connection(
             "http://localhost:11434/api/tags",
             vec![],
         ),
-        _ => {
-            // Generic OpenAI-compatible
-            (
-                "https://api.openai.com/v1/models",
-                vec![("Authorization", format!("Bearer {}", api_key))],
-            )
-        }
+        _ => (
+            "https://api.openai.com/v1/models",
+            vec![("Authorization", format!("Bearer {}", api_key))],
+        )
     };
 
     let mut req = client.get(url);
@@ -359,6 +428,7 @@ async fn chat(
         .map(|m| Message {
             role: m.role,
             content: m.content,
+            ..Default::default()
         })
         .collect();
 
@@ -371,7 +441,7 @@ async fn chat(
 
 #[tauri::command]
 async fn send_message(
-    app_handle: tauri::AppHandle,
+    app_handle: AppHandle,
     state: State<'_, AppState>,
     session_id: String,
     content: String,
@@ -387,36 +457,114 @@ async fn send_message(
     let provider_id = active.provider_id.clone();
     let model_id = active.model_id.clone();
 
-    let msgs = vec![Message {
-        role: "user".to_string(),
-        content: content.clone(),
-    }];
-
-    let mut stream = state
+    let provider = state
         .registry
-        .stream_chat_async(&provider_id, &model_id, msgs)
-        .await
-        .map_err(|e| e.to_string())?;
+        .get_or_create(&provider_id)
+        .ok_or_else(|| format!("provider not available: {provider_id}"))?;
 
-    let mut full_response = String::new();
-    while let Some(chunk) = stream.next().await {
-        match chunk {
-            Ok(token) => {
-                full_response.push_str(&token);
-                let _ = app_handle.emit("orion://token", &token);
-            }
-            Err(e) => {
-                let msg = e.to_string();
-                let _ = app_handle.emit("orion://error", &msg);
-                return Err(msg);
+    let agent_mode = mode.as_deref() == Some("agent");
+
+    if !agent_mode {
+        // Existing chat-only path: stream text and emit orion://token events.
+        let msgs = vec![Message {
+            role: "user".to_string(),
+            content: content.clone(),
+            ..Default::default()
+        }];
+
+        let mut stream = state
+            .registry
+            .stream_chat_async(&provider_id, &model_id, msgs)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let mut full_response = String::new();
+        while let Some(chunk) = stream.next().await {
+            match chunk {
+                Ok(token) => {
+                    full_response.push_str(&token);
+                    let _ = app_handle.emit("orion://token", &token);
+                }
+                Err(e) => {
+                    let msg = e.to_string();
+                    let _ = app_handle.emit("orion://error", &msg);
+                    return Err(msg);
+                }
             }
         }
+
+        let _ = app_handle.emit("orion://done", ());
+        let _ = state.catalog.touch_session(&session_id);
+
+        Ok(full_response)
+    } else {
+        // Agent mode: dispatcher handles tool calls.
+        let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        let approval_channel = Arc::new(TauriApprovalChannel {
+            app: app_handle.clone(),
+            bridge: state.approvals.clone(),
+        });
+        let dispatcher = Dispatcher::new(
+            state.tools.clone(),
+            state.permissions.clone(),
+            DispatchConfig::new(cwd).with_approval(approval_channel),
+        );
+
+        let mut messages = Vec::new();
+        // Prepend project memory (AGENTS.md / ORION.md) if any.
+        let memory_snapshot = state.project_memory.lock().unwrap().clone();
+        let prompt = merged_system_prompt(&memory_snapshot);
+        if !prompt.is_empty() {
+            messages.push(Message {
+                role: "system".into(),
+                content: prompt,
+                ..Default::default()
+            });
+        }
+        messages.push(Message {
+            role: "user".into(),
+            content: content.clone(),
+            ..Default::default()
+        });
+
+        let events = dispatcher
+            .run(provider, &provider_id, &model_id, messages)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let mut full_response = String::new();
+        for ev in events {
+            match ev {
+                DispatchEvent::Token(text) => {
+                    full_response.push_str(&text);
+                    let _ = app_handle.emit("orion://token", &text);
+                }
+                DispatchEvent::ToolCall(call) => {
+                    let _ = app_handle.emit("orion://tool_call", &call);
+                }
+                DispatchEvent::ToolResult { tool_call_id, content, is_error } => {
+                    let _ = app_handle.emit(
+                        "orion://tool_result",
+                        serde_json::json!({
+                            "tool_call_id": tool_call_id,
+                            "content": content,
+                            "is_error": is_error,
+                        }),
+                    );
+                }
+                DispatchEvent::Done { .. } => {
+                    let _ = app_handle.emit("orion://done", ());
+                }
+                DispatchEvent::Error(msg) => {
+                    let _ = app_handle.emit("orion://error", &msg);
+                    return Err(msg);
+                }
+            }
+        }
+
+        let _ = state.catalog.touch_session(&session_id);
+        Ok(full_response)
     }
-
-    let _ = app_handle.emit("orion://done", ());
-    let _ = state.catalog.touch_session(&session_id);
-
-    Ok(full_response)
 }
 
 #[tauri::command]
@@ -461,7 +609,6 @@ fn get_active_session(state: State<'_, AppState>) -> Option<Session> {
     if let Some(s) = state.catalog.get_active_session() {
         return Some(s);
     }
-    // No active session yet — create a default one and return it.
     let session = state.catalog.create_session(Some("New session")).ok()?;
     let _ = state.catalog.set_active_session(&session.id);
     Some(session)
@@ -502,6 +649,83 @@ fn health() -> &'static str {
     "orion-desktop ok"
 }
 
+#[tauri::command]
+fn list_tools(state: State<'_, AppState>) -> Vec<orion_core::tools::ToolDefinition> {
+    state.tools.list()
+}
+
+#[tauri::command]
+fn add_permission_rule(
+    state: State<'_, AppState>,
+    tool: String,
+    pattern: String,
+    action: String,
+) -> Result<(), String> {
+    let act = match action.as_str() {
+        "allow" => PermissionAction::Allow,
+        "ask" => PermissionAction::Ask,
+        "deny" => PermissionAction::Deny,
+        _ => return Err(format!("unknown action: {action}")),
+    };
+    state.permissions.add_rule(&tool, &pattern, act)
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ProjectMemoryDto {
+    pub path: String,
+    pub body: String,
+}
+
+#[tauri::command]
+fn get_project_memory(state: State<'_, AppState>) -> Vec<ProjectMemoryDto> {
+    state
+        .project_memory
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|m| ProjectMemoryDto {
+            path: m.path.to_string_lossy().to_string(),
+            body: m.body.clone(),
+        })
+        .collect()
+}
+
+#[tauri::command]
+fn reload_project_memory(
+    state: State<'_, AppState>,
+    cwd: Option<String>,
+) -> Vec<ProjectMemoryDto> {
+    let path = cwd
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")));
+    let loader = ProjectMemoryLoader::new(path);
+    let loaded = loader.load().unwrap_or_default();
+    let dtos: Vec<ProjectMemoryDto> = loaded
+        .iter()
+        .map(|m| ProjectMemoryDto {
+            path: m.path.to_string_lossy().to_string(),
+            body: m.body.clone(),
+        })
+        .collect();
+    *state.project_memory.lock().unwrap() = loaded;
+    dtos
+}
+
+#[tauri::command]
+fn submit_approval(
+    state: State<'_, AppState>,
+    id: u64,
+    decision: String,
+) -> bool {
+    let resp = match decision.as_str() {
+        "allow" => ApprovalResponse::Allow,
+        "allow_always" => ApprovalResponse::AllowAlways,
+        "deny" => ApprovalResponse::Deny,
+        _ => ApprovalResponse::Deny,
+    };
+    state.approvals.resolve(id, resp)
+}
+
 // Renamed command aliases (spec rename: set_default_model -> set_active_model,
 // save_provider_api_key -> save_provider). Old names kept for one version.
 #[tauri::command]
@@ -527,10 +751,28 @@ fn main() {
 
     let default_model = catalog.get_default_model().map(|m| m.full_id());
 
+    let tools = Arc::new(builtin_registry());
+    let permissions = Arc::new(PermissionEngine::new(PermissionConfig::safe_defaults()));
+    let dispatcher = Arc::new(Dispatcher::new(
+        tools.clone(),
+        permissions.clone(),
+        DispatchConfig::new(std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))),
+    ));
+
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let project_memory = ProjectMemoryLoader::new(cwd).load().unwrap_or_default();
+
+    let approvals = Arc::new(ApprovalBridge::new());
+
     let state = AppState {
         catalog,
         registry,
         default_model: Mutex::new(default_model),
+        tools,
+        permissions,
+        dispatcher,
+        project_memory: StdMutex::new(project_memory),
+        approvals,
     };
 
     tauri::Builder::default()
@@ -562,6 +804,11 @@ fn main() {
             set_active_session,
             delete_session,
             rename_session,
+            list_tools,
+            add_permission_rule,
+            get_project_memory,
+            reload_project_memory,
+            submit_approval,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

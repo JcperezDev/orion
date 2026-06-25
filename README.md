@@ -39,6 +39,35 @@ Config location: `~/.config/orion/config.toml`
 
 Default model catalog: `~/.config/orion/catalog.db`
 
+> Configuration and the model catalog are stored **per-user**. If you signed in as one Linux user and want to copy the saved providers / API keys to another user, copy `~/.config/orion/catalog.db` and `~/.config/orion/config.toml` to the target user's `~/.config/orion/` (paths respect `$XDG_CONFIG_HOME`).
+
+## Agent mode (built-in tools)
+
+Orion can run as an agent: the model reads files, runs commands, edits code, and reports back. Built-in tools are gated by a permission system (per-tool `allow` / `ask` / `deny` + glob patterns, last match wins).
+
+| Tool        | What it does                                | Default |
+|-------------|---------------------------------------------|---------|
+| `read`      | Read a file (offset/limit supported)        | allow   |
+| `write`     | Create / overwrite a file                   | ask     |
+| `edit`      | Replace exact text in a file                | ask     |
+| `bash`      | Run a shell command (stdout/stderr captured)| ask     |
+| `grep`      | Regex search across files                   | allow   |
+| `glob`      | Find files by glob                          | allow   |
+| `todowrite` | Update a per-session todo list              | allow   |
+
+Permission rules can be tuned at runtime from the Tauri command `add_permission_rule(tool, pattern, action)` or by editing the rules in `~/.config/orion/config.toml`.
+
+## Project memory (AGENTS.md / ORION.md)
+
+At session start Orion reads project memory in this order and merges it into the system prompt:
+
+1. `./AGENTS.md`
+2. `./ORION.md`
+3. `~/.config/orion/AGENTS.md`
+4. `~/.config/orion/ORION.md`
+
+Each file may include optional YAML frontmatter delimited by `---` for `description`, `model`, and `permission` overrides.
+
 ## Commands
 
 ```

@@ -1,0 +1,164 @@
+/* ===== Permission Dialog ===== */
+.permission-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+}
+
+.permission-dialog {
+  background: var(--bg-secondary, #111116);
+  border: 0.5px solid var(--border-mid, #2a2a38);
+  border-radius: 12px;
+  width: min(520px, 92vw);
+  max-height: 80vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.55);
+}
+
+.permission-dialog-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 18px;
+  border-bottom: 0.5px solid var(--border-subtle, #1e1e28);
+}
+
+.permission-dialog-header h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-primary, #e2e0f0);
+}
+
+.permission-tool-badge {
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent-text, #a09ef0);
+  background: var(--accent-muted, #2d2a5e);
+  padding: 3px 8px;
+  border-radius: 4px;
+}
+
+.permission-dialog-body {
+  padding: 14px 18px;
+  overflow-y: auto;
+  font-size: 13px;
+  color: var(--text-primary, #e2e0f0);
+}
+
+.permission-action {
+  font-family: var(--font-mono, monospace);
+  background: var(--bg-tertiary, #18181f);
+  border: 0.5px solid var(--border-subtle, #1e1e28);
+  padding: 8px 10px;
+  border-radius: 6px;
+  margin-bottom: 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.permission-args {
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  background: var(--bg-primary, #0a0a0c);
+  border: 0.5px solid var(--border-subtle, #1e1e28);
+  padding: 8px 10px;
+  border-radius: 6px;
+  max-height: 200px;
+  overflow: auto;
+  color: var(--text-secondary, #8884a8);
+  margin: 0 0 10px 0;
+}
+
+.permission-pattern {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-secondary, #8884a8);
+  line-height: 1.5;
+}
+
+.permission-pattern code {
+  font-family: var(--font-mono, monospace);
+  background: var(--bg-tertiary, #18181f);
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: var(--accent-text, #a09ef0);
+}
+
+.permission-dialog-actions {
+  display: flex;
+  gap: 8px;
+  padding: 12px 18px;
+  border-top: 0.5px solid var(--border-subtle, #1e1e28);
+  justify-content: flex-end;
+}
+
+.permission-btn {
+  background: transparent;
+  border: 0.5px solid var(--border-mid, #2a2a38);
+  color: var(--text-primary, #e2e0f0);
+  padding: 7px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+  font-family: inherit;
+}
+
+.permission-btn:hover {
+  background: var(--bg-tertiary, #18181f);
+  border-color: var(--accent, #534AB7);
+}
+
+.permission-btn.primary {
+  background: var(--accent, #534AB7);
+  border-color: var(--accent, #534AB7);
+  color: #fff;
+}
+
+.permission-btn.primary:hover {
+  background: var(--accent-hover, #6259d4);
+  border-color: var(--accent-hover, #6259d4);
+}
+
+.permission-btn.deny:hover {
+  border-color: var(--red, #A32D2D);
+  color: var(--red-text, #f87171);
+}
+
+/* ===== Tool call cards in chat ===== */
+.tool-call-card {
+  margin: 6px 0;
+  padding: 8px 12px;
+  border-left: 2px solid var(--accent, #534AB7);
+  background: var(--bg-tertiary, #18181f);
+  border-radius: 0 6px 6px 0;
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  color: var(--text-secondary, #8884a8);
+}
+
+.tool-call-card .tool-name {
+  color: var(--accent-text, #a09ef0);
+  font-weight: 600;
+  margin-right: 6px;
+}
+
+.tool-call-card.error {
+  border-left-color: var(--red, #A32D2D);
+}
+
+.tool-call-card.ok {
+  border-left-color: var(--green, #1D9E75);
+}
