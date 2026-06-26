@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ChatMessage } from './MessageList'
 
-export type BuildMode = 'build' | 'plan'
+export type BuildMode = 'build' | 'plan' | 'agent'
 
 export interface SubmitPayload {
   text: string
@@ -151,9 +151,17 @@ export default function InputArea({
             value={mode}
             onChange={e => setMode(e.target.value as BuildMode)}
             disabled={sending}
+            title={
+              mode === 'agent'
+                ? 'Agent mode: ORION can use tools (read, write, bash, MCP) and may ask permission'
+                : mode === 'plan'
+                ? 'Plan mode: read-only research, no edits'
+                : 'Build mode: direct execution, no tools'
+            }
           >
             <option value="build">Build</option>
             <option value="plan">Plan</option>
+            <option value="agent">Agent</option>
           </select>
           <button className="add-context-btn" disabled>+ Contexto</button>
           <span className="session-info">{sessionId.slice(0, 8)}</span>

@@ -14,6 +14,18 @@ interface Session {
   active_model: string | null
 }
 
+interface ToolCallEvent {
+  id: string
+  name: string
+  arguments: unknown
+}
+
+interface ToolResultEvent {
+  tool_call_id: string
+  content: string
+  is_error: boolean
+}
+
 interface ModelInfo {
   id: string
   provider: string
@@ -55,6 +67,14 @@ export default function ChatView() {
 
     listen<string>('orion://token', e => {
       appendToken(e.payload)
+    }).then(fn => { if (mounted) unlistens.push(fn); else fn() })
+
+    listen<ToolCallEvent>('orion://tool_call', e => {
+      pushToolCall(e.payload)
+    }).then(fn => { if (mounted) unlistens.push(fn); else fn() })
+
+    listen<ToolResultEvent>('orion://tool_result', e => {
+      completeToolCall(e.payload)
     }).then(fn => { if (mounted) unlistens.push(fn); else fn() })
 
     listen<string>('orion://error', e => {
@@ -100,6 +120,59 @@ export default function ChatView() {
   const pushError = useCallback((content: string) => {
     pushMessage({ id: genId(), role: 'error', content, timestamp: nowIso() })
   }, [pushMessage])
+
+  const pushToolCall = useCallback((ev: ToolCallEvent) => {
+    const input = typeof ev.arguments === 'string'
+      ? ev.arguments
+      : JSON.stringify(ev.arguments, null, 2)
+    pushMessage({
+      id: genId(),
+      role: 'tool_call',
+      timestamp: nowIso(),
+      tool: { id: ev.id, name: ev.name, input, status: 'running' },
+    })
+  }, [pushMessage])
+
+  const completeToolCall = useCallback((ev: ToolResultEvent) => {
+    setMessages(prev => {
+      // Update the most recent running tool_call that has a matching id (or no id yet).
+      for (let i = prev.length - 1; i >= 0; i--) {
+        const m = prev[i]
+        if (m.role === 'tool_call' && m.tool && m.tool.status === 'running') {
+          if (!m.tool.id || m.tool.id === ev.tool_call_id) {
+            const next = prev.slice()
+            next[i] = {
+              ...m,
+              tool: {
+                ...m.tool,
+                status: ev.is_error ? 'error' : 'done',
+                output: ev.content,
+                isError: ev.is_error,
+              },
+            }
+            return next
+          }
+        }
+      }
+      // Fallback: append a new tool_call message with the result.
+      return [
+        ...prev,
+        {
+          id: genId(),
+          role: 'tool_call',
+          timestamp: nowIso(),
+          tool: {
+            id: ev.tool_call_id,
+            name: 'tool',
+            input: '',
+            output: ev.content,
+            status: ev.is_error ? 'error' : 'done',
+            isError: ev.is_error,
+          },
+        },
+      ]
+    })
+  }, [])
 
   const appendToken = useCallback((token: string) => {
     setMessages(prev => {
