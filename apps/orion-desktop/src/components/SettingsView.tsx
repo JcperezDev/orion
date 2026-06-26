@@ -97,7 +97,14 @@ interface SectionDef {
 }
 
 export default function SettingsView() {
-  const [activeSection, setActiveSection] = useState<Section>('providers')
+  const [activeSection, setActiveSection] = useState<Section>(() => {
+    if (typeof window === 'undefined') return 'providers'
+    const m = window.location.hash.match(/^#settings\/([a-z]+)/)
+    if (m && ['general','providers','language','appearance','shortcuts','memory','agents','mcp','models','servers','permissions'].includes(m[1])) {
+      return m[1] as Section
+    }
+    return 'providers'
+  })
   const [providers, setProviders] = useState<Provider[]>([])
   const [models, setModels] = useState<Model[]>([])
   const [defaultModel, setDefaultModel] = useState<string | null>(null)

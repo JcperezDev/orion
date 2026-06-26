@@ -20,7 +20,14 @@ export interface Provider {
 const isProviderConnected = (p: Provider) => p.has_api_key || p.id === 'ollama'
 
 export default function App() {
-  const [activeView, setActiveView] = useState<View>('chat')
+  const viewFromHash = (): View => {
+    if (typeof window === 'undefined') return 'chat'
+    const h = window.location.hash.replace('#', '')
+    if (h.startsWith('settings/')) return 'settings'
+    if (h === 'settings') return 'settings'
+    return 'chat'
+  }
+  const [activeView, setActiveView] = useState<View>(viewFromHash())
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [workspacePath, setWorkspacePath] = useState<string>('')
   const [workspaceName, setWorkspaceName] = useState<string>('')
