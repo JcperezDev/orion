@@ -120,6 +120,7 @@ pub async fn summarize(
         messages: vec![crate::providers::Message {
             role: "user".into(),
             content: prompt,
+            ..Default::default()
         }],
         temperature: Some(0.2),
         max_tokens: Some(512),

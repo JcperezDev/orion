@@ -4,6 +4,7 @@ members = [
     "crates/orion-core",
     "apps/orion-tui",
     "apps/orion-server",
+    "apps/orion-cli",
     "apps/orion-desktop/src-tauri",
 ] 
 
@@ -42,6 +43,9 @@ axum = "0.7"
 tower = "0.5"
 tower-http = { version = "0.6", features = ["cors", "trace"] }
 async-stream = "0.3"
+globset = "0.4"
+walkdir = "2.5"
+regex = "1.10"
 
 [profile.release] 
 opt-level = 3

@@ -25,9 +25,10 @@ interface Props {
   onTitleChange: (newTitle: string) => void
   totalTokens: number
   tokenLimit: number
+  onModelChange?: () => void
 }
 
-export default function ChatHeader({ sessionTitle, sessionId, onTitleChange, totalTokens, tokenLimit }: Props) {
+export default function ChatHeader({ sessionTitle, sessionId, onTitleChange, totalTokens, tokenLimit, onModelChange }: Props) {
   const [editing, setEditing] = useState(false)
   const [title, setTitle] = useState(sessionTitle)
   const [active, setActive] = useState<ActiveConfig | null>(null)
@@ -97,6 +98,7 @@ export default function ChatHeader({ sessionTitle, sessionId, onTitleChange, tot
       await invoke('set_active_model', { modelId })
       setOpen(false)
       await refreshActive()
+      onModelChange?.()
     } catch (e) {
       console.error('Set model failed:', e)
     }

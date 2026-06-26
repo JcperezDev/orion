@@ -360,6 +360,7 @@ impl MemoryStore {
             Message {
                 role: "system".into(),
                 content: format!("Project context:\n{summary}"),
+                ..Default::default()
             },
         );
         let _ = session_id;

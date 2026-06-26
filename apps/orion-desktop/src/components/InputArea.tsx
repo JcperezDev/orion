@@ -1,20 +1,22 @@
 import { useEffect, useRef, useState } from 'react'
-import { invoke } from '@tauri-apps/api/core'
-import { listen, UnlistenFn } from '@tauri-apps/api/event'
 import type { ChatMessage } from './MessageList'
+
+export type BuildMode = 'build' | 'plan' | 'agent'
+
+export interface SubmitPayload {
+  text: string
+  mode: BuildMode
+  /** True if the text starts with "/" — the parent can decide whether to handle as command. */
+  isCommand: boolean
+}
 
 interface Props {
   sessionId: string
   disabled?: boolean
-  onUserMessage: (msg: ChatMessage) => void
-  onAssistantStart: (msg: ChatMessage) => void
-  onToken: (token: string) => void
-  onAssistantEnd: (fullText: string) => void
-  onError: (message: string) => void
-  onSendingChange: (sending: boolean) => void
+  onSubmit: (payload: SubmitPayload) => void | Promise<void>
+  onUserMessage?: (msg: ChatMessage) => void
+  onSendingChange?: (sending: boolean) => void
 }
-
-type BuildMode = 'build' | 'plan'
 
 function genId(): string {
   return (Date.now().toString(36) + Math.random().toString(36).slice(2, 8))
@@ -23,46 +25,19 @@ function genId(): string {
 export default function InputArea({
   sessionId,
   disabled,
+  onSubmit,
   onUserMessage,
-  onAssistantStart,
-  onToken,
-  onAssistantEnd,
-  onError,
   onSendingChange,
 }: Props) {
   const [input, setInput] = useState('')
   const [mode, setMode] = useState<BuildMode>('build')
   const [sending, setSending] = useState(false)
   const taRef = useRef<HTMLTextAreaElement>(null)
+  const [showCommandHints, setShowCommandHints] = useState(false)
 
   useEffect(() => {
-    onSendingChange(sending)
+    onSendingChange?.(sending)
   }, [sending, onSendingChange])
-
-  useEffect(() => {
-    const unlistens: UnlistenFn[] = []
-    let mounted = true
-
-    listen<string>('orion://token', e => {
-      onToken(e.payload)
-    }).then(fn => {
-      if (mounted) unlistens.push(fn)
-      else fn()
-    })
-
-    listen<string>('orion://error', e => {
-      onError(e.payload)
-      setSending(false)
-    }).then(fn => {
-      if (mounted) unlistens.push(fn)
-      else fn()
-    })
-
-    return () => {
-      mounted = false
-      unlistens.forEach(fn => fn())
-    }
-  }, [onToken, onError])
 
   const autoResize = () => {
     const ta = taRef.current
@@ -73,39 +48,27 @@ export default function InputArea({
 
   const canSend = !!input.trim() && !sending && !disabled
 
-  const send = async () => {
+  const submit = async () => {
     if (!canSend) return
     const text = input.trim()
+    const isCommand = text.startsWith('/')
     setInput('')
     autoResize()
-    setSending(true)
+    setShowCommandHints(false)
 
-    const userMsg: ChatMessage = {
-      id: genId(),
-      role: 'user',
-      content: text,
-      timestamp: new Date().toISOString(),
-    }
-    onUserMessage(userMsg)
-
-    const assistantMsg: ChatMessage = {
-      id: genId(),
-      role: 'assistant',
-      content: '',
-      timestamp: new Date().toISOString(),
-      isStreaming: true,
-    }
-    onAssistantStart(assistantMsg)
-
-    try {
-      const full = await invoke<string>('send_message', {
-        sessionId,
+    // Echo the user's command/message into the chat for visual continuity.
+    if (onUserMessage && isCommand) {
+      onUserMessage({
+        id: genId(),
+        role: 'user',
         content: text,
-        mode,
+        timestamp: new Date().toISOString(),
       })
-      onAssistantEnd(full)
-    } catch (e) {
-      onError(String(e))
+    }
+
+    setSending(true)
+    try {
+      await onSubmit({ text, mode, isCommand })
     } finally {
       setSending(false)
     }
@@ -114,21 +77,24 @@ export default function InputArea({
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
-      if (canSend) send()
+      if (canSend) submit()
     }
+  }
+
+  const handleChange = (val: string) => {
+    setInput(val)
+    autoResize()
+    setShowCommandHints(val === '/')
   }
 
   return (
     <div className="input-area">
       <div className="input-area-inner">
-        <div className="input-box">
+        <div className="input-box" style={{ position: 'relative' }}>
           <textarea
             ref={taRef}
             value={input}
-            onChange={e => {
-              setInput(e.target.value)
-              autoResize()
-            }}
+            onChange={e => handleChange(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={disabled ? 'Configura un provider primero...' : 'Escribe un mensaje o / para comandos...'}
             disabled={disabled || sending}
@@ -137,12 +103,47 @@ export default function InputArea({
           <button
             className="send-btn"
             disabled={!canSend}
-            onClick={send}
+            onClick={submit}
             aria-label="Enviar"
             title="Enviar (Enter)"
           >
             ↑
           </button>
+
+          {showCommandHints && (
+            <div className="absolute bottom-full left-0 right-0 mb-1 max-h-64 overflow-y-auto rounded-lg border border-border bg-[var(--surface)] shadow-lg" style={{ background: 'var(--bg-secondary)', border: '0.5px solid var(--border-mid)', borderRadius: 8 }}>
+              {[
+                { id: '/clear',     label: 'Limpiar chat', desc: 'Borra todos los mensajes' },
+                { id: '/help',      label: 'Ayuda',        desc: 'Muestra los comandos disponibles' },
+                { id: '/providers', label: 'Ver providers', desc: 'Lista providers conectados' },
+                { id: '/model',     label: 'Modelo actual', desc: 'Muestra el modelo y los disponibles' },
+                { id: '/sync',      label: 'Sincronizar',  desc: 'Sincroniza modelos del provider activo' },
+              ].map(c => (
+                <div
+                  key={c.id}
+                  onMouseDown={(e) => {
+                    e.preventDefault()
+                    setInput(c.id + ' ')
+                    setShowCommandHints(false)
+                    taRef.current?.focus()
+                  }}
+                  className="command-hint-item"
+                  style={{
+                    padding: '7px 12px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    fontSize: 12,
+                  }}
+                >
+                  <span style={{ color: 'var(--accent-text)', fontFamily: "'JetBrains Mono', monospace", minWidth: 80 }}>{c.id}</span>
+                  <span style={{ color: 'var(--text-primary)', flex: 1 }}>{c.label}</span>
+                  <span style={{ color: 'var(--text-tertiary)', fontSize: 10 }}>{c.desc}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
         <div className="input-controls">
           <select
@@ -150,9 +151,17 @@ export default function InputArea({
             value={mode}
             onChange={e => setMode(e.target.value as BuildMode)}
             disabled={sending}
+            title={
+              mode === 'agent'
+                ? 'Agent mode: ORION can use tools (read, write, bash, MCP) and may ask permission'
+                : mode === 'plan'
+                ? 'Plan mode: read-only research, no edits'
+                : 'Build mode: direct execution, no tools'
+            }
           >
             <option value="build">Build</option>
             <option value="plan">Plan</option>
+            <option value="agent">Agent</option>
           </select>
           <button className="add-context-btn" disabled>+ Contexto</button>
           <span className="session-info">{sessionId.slice(0, 8)}</span>

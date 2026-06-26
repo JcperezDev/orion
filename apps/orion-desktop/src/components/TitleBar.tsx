@@ -8,6 +8,21 @@ interface Props {
 
 const isMac = typeof navigator !== 'undefined' && /Mac/i.test(navigator.userAgent)
 
+// Detect whether we're running inside a Tauri webview. Outside Tauri (e.g. a
+// plain browser pointed at the vite dev server), the window API throws and
+// `data-tauri-drag-region` is a no-op. Render the titlebar harmlessly either way.
+function isTauri(): boolean {
+  if (typeof window === 'undefined') return false
+  // Tauri v2 exposes a global; older v1 used `__TAURI__`.
+  return Boolean((window as any).__TAURI_INTERNALS__ || (window as any).__TAURI__)
+}
+
+function safeCall<T>(fn: () => Promise<T> | T, fallback: T): Promise<T> {
+  return Promise.resolve()
+    .then(fn)
+    .catch(() => fallback)
+}
+
 function MinimizeIcon() {
   return (
     <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
@@ -69,21 +84,26 @@ export default function TitleBar({ onOpenSettings, onOpenSearch }: Props) {
   const [maximized, setMaximized] = useState(false)
 
   useEffect(() => {
-    const win = getCurrentWindow()
-    let unlisten: (() => void) | undefined
-    win.isMaximized().then(setMaximized).catch(() => {})
-    win.onResized(() => {
+    if (!isTauri()) return
+    try {
+      const win = getCurrentWindow()
+      let unlisten: (() => void) | undefined
       win.isMaximized().then(setMaximized).catch(() => {})
-    }).then(u => { unlisten = u }).catch(() => {})
+      win.onResized(() => {
+        win.isMaximized().then(setMaximized).catch(() => {})
+      }).then(u => { unlisten = u }).catch(() => {})
 
-    return () => {
-      if (unlisten) unlisten()
+      return () => {
+        if (unlisten) unlisten()
+      }
+    } catch {
+      // getCurrentWindow() can throw outside a Tauri webview; ignore.
     }
   }, [])
 
-  const onMinimize = () => getCurrentWindow().minimize().catch(() => {})
-  const onToggleMaximize = () => getCurrentWindow().toggleMaximize().catch(() => {})
-  const onClose = () => getCurrentWindow().close().catch(() => {})
+  const onMinimize = () => isTauri() && safeCall(() => getCurrentWindow().minimize(), undefined)
+  const onToggleMaximize = () => isTauri() && safeCall(() => getCurrentWindow().toggleMaximize(), undefined)
+  const onClose = () => isTauri() && safeCall(() => getCurrentWindow().close(), undefined)
 
   return (
     <div className="titlebar" data-tauri-drag-region>

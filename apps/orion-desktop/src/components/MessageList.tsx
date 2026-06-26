@@ -3,16 +3,18 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 export type MessageRole = 'system' | 'assistant' | 'user' | 'tool_call' | 'error'
 
 export interface ToolInfo {
+  id?: string
   name: string
   input: string
   output?: string
   status: 'running' | 'done' | 'error'
+  isError?: boolean
 }
 
 export interface ChatMessage {
   id: string
   role: MessageRole
-  content: string
+  content?: string
   timestamp: string
   model?: string
   tool?: ToolInfo
@@ -138,7 +140,9 @@ function ToolCard({ tool }: { tool: ToolInfo }) {
           </div>
           {tool.output && (
             <div>
-              <span style={{ color: 'var(--text-tertiary, #4a4866)' }}>output:</span> {tool.output}
+              <span style={{ color: tool.isError ? 'var(--red-text, #f87171)' : 'var(--text-tertiary, #4a4866)' }}>
+                {tool.isError ? 'error:' : 'output:'}
+              </span> {tool.output}
             </div>
           )}
         </div>
@@ -198,7 +202,7 @@ export default function MessageList({ messages }: Props) {
           )
         }
         const labelClass = msg.role
-        const content = renderContent(msg.content, !!msg.isStreaming, msg.id)
+        const content = renderContent(msg.content ?? '', !!msg.isStreaming, msg.id)
         return (
           <div key={msg.id} className="msg-wrapper">
             <div className="msg-head">
