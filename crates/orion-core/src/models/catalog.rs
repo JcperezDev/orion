@@ -107,6 +107,13 @@ pub struct Session {
     pub active_model: Option<String>,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct StoredMessage {
+    pub role: String,
+    pub content: String,
+    pub created_at: String,
+}
+
 pub struct ModelCatalog {
     conn: Arc<Mutex<Connection>>,
 }
@@ -183,9 +190,18 @@ impl ModelCatalog {
                 active_model TEXT
             );
 
+            CREATE TABLE IF NOT EXISTS messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
             CREATE INDEX IF NOT EXISTS idx_models_provider ON models(provider_id);
             CREATE INDEX IF NOT EXISTS idx_models_rank ON models(rank_overall);
             CREATE INDEX IF NOT EXISTS idx_sessions_updated ON sessions(updated_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, id);
             "#,
         )?;
 
@@ -1023,8 +1039,45 @@ impl ModelCatalog {
 
     pub fn delete_session(&self, id: &str) -> Result<()> {
         let conn = self.conn.lock();
+        conn.execute("DELETE FROM messages WHERE session_id = ?1", [id])?;
         conn.execute("DELETE FROM sessions WHERE id = ?1", [id])?;
         Ok(())
+    }
+
+    /// Persist a chat message and bump the session's counter/timestamp.
+    pub fn add_message(&self, session_id: &str, role: &str, content: &str) -> Result<()> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "INSERT INTO messages (session_id, role, content) VALUES (?1, ?2, ?3)",
+            params![session_id, role, content],
+        )?;
+        conn.execute(
+            "UPDATE sessions SET message_count = message_count + 1, updated_at = datetime('now') WHERE id = ?1",
+            [session_id],
+        )?;
+        Ok(())
+    }
+
+    /// Load a session's messages in chronological order.
+    pub fn get_messages(&self, session_id: &str) -> Vec<StoredMessage> {
+        let conn = self.conn.lock();
+        let mut stmt = match conn.prepare(
+            "SELECT role, content, created_at FROM messages WHERE session_id = ?1 ORDER BY id ASC",
+        ) {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
+        let rows = stmt.query_map([session_id], |row| {
+            Ok(StoredMessage {
+                role: row.get(0)?,
+                content: row.get(1)?,
+                created_at: row.get(2)?,
+            })
+        });
+        match rows {
+            Ok(r) => r.filter_map(|m| m.ok()).collect(),
+            Err(_) => Vec::new(),
+        }
     }
 
     pub fn rename_session(&self, id: &str, title: &str) -> Result<()> {

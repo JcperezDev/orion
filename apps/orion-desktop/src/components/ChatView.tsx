@@ -69,6 +69,34 @@ export default function ChatView() {
       .catch(e => console.error('Failed to load active session:', e))
   }, [])
 
+  // Load persisted messages whenever the active session changes.
+  useEffect(() => {
+    if (!activeSession) { setMessages([]); return }
+    invoke<Array<{ role: string; content: string; created_at: string }>>('get_messages', { sessionId: activeSession.id })
+      .then(rows => {
+        setMessages(rows.map(m => ({
+          id: genId(),
+          role: m.role as ChatMessage['role'],
+          content: m.content,
+          timestamp: m.created_at,
+        })))
+      })
+      .catch(() => {})
+  }, [activeSession?.id])
+
+  // React to session switches coming from the Sidebar.
+  useEffect(() => {
+    const onSessionChange = (e: Event) => {
+      const id = (e as CustomEvent).detail as string | null
+      if (!id) { setActiveSession(null); return }
+      invoke<Session | null>('get_active_session')
+        .then(s => { if (s) setActiveSession(s) })
+        .catch(() => {})
+    }
+    window.addEventListener('orion:session', onSessionChange)
+    return () => window.removeEventListener('orion:session', onSessionChange)
+  }, [])
+
   // Load active model + context_window whenever session becomes available or model changes
   useEffect(() => {
     if (!activeSession) return

@@ -110,11 +110,17 @@ export default function Sidebar({ onOpenSettings, workspaceName, workspacePath }
     }
   }
 
+  function notifySessionChange(id: string | null) {
+    window.dispatchEvent(new CustomEvent('orion:session', { detail: id }))
+  }
+
   async function handleNewSession() {
     try {
       const session = await invoke<Session>('create_session', { title: 'New session' })
       setSessions(prev => [session, ...prev])
       setActiveId(session.id)
+      await invoke('set_active_session', { id: session.id })
+      notifySessionChange(session.id)
     } catch (e) {
       setError(String(e))
     }
@@ -125,6 +131,7 @@ export default function Sidebar({ onOpenSettings, workspaceName, workspacePath }
     try {
       await invoke('set_active_session', { id })
       setActiveId(id)
+      notifySessionChange(id)
     } catch (e) {
       setError(String(e))
     }
@@ -137,6 +144,7 @@ export default function Sidebar({ onOpenSettings, workspaceName, workspacePath }
       setSessions(prev => prev.filter(s => s.id !== id))
       if (id === activeId) {
         setActiveId(null)
+        notifySessionChange(null)
       }
     } catch (err) {
       setError(String(err))

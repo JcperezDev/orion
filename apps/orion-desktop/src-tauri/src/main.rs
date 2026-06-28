@@ -549,6 +549,9 @@ async fn send_message(
         .get_or_create(&provider_id)
         .ok_or_else(|| format!("provider not available: {provider_id}"))?;
 
+    // Persist the user's message so the conversation survives restarts.
+    let _ = state.catalog.add_message(&session_id, "user", &content);
+
     if !agent_mode {
         // Chat-only path (build or plan): stream text and emit orion://token events.
         let mut msgs = history.clone();
@@ -595,6 +598,9 @@ async fn send_message(
             }
         }
 
+        if !full_response.trim().is_empty() {
+            let _ = state.catalog.add_message(&session_id, "assistant", &full_response);
+        }
         // Guard against a silent empty response (provider returned 200 but no
         // content) so the user always gets feedback.
         if full_response.trim().is_empty() {
@@ -728,10 +734,18 @@ async fn send_message(
             }
         }
 
+        if !full_response.trim().is_empty() {
+            let _ = state.catalog.add_message(&session_id, "assistant", &full_response);
+        }
         let _ = app_handle.emit("orion://done", ());
         let _ = state.catalog.touch_session(&session_id);
         Ok(full_response)
     }
+}
+
+#[tauri::command]
+fn get_messages(state: State<'_, AppState>, session_id: String) -> Vec<orion_core::models::catalog::StoredMessage> {
+    state.catalog.get_messages(&session_id)
 }
 
 #[tauri::command]
@@ -1042,6 +1056,7 @@ fn main() {
             set_active_session,
             delete_session,
             rename_session,
+            get_messages,
             list_tools,
             add_permission_rule,
             get_full_access,
