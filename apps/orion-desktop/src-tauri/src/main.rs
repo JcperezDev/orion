@@ -506,40 +506,16 @@ async fn send_message(
     // auto-pick a model from a connected provider so the user can just chat.
     let active = match state.catalog.get_default_model() {
         Some(m) => m,
-        None => {
-            let connected: std::collections::HashSet<String> = state
-                .catalog
-                .list_providers()
-                .into_iter()
-                .filter(|p| {
-                    p.id == "ollama"
-                        || state.catalog.get_api_key(&p.id).is_some()
-                        || p.api_key_env
-                            .as_ref()
-                            .and_then(|k| std::env::var(k).ok())
-                            .is_some()
-                })
-                .map(|p| p.id)
-                .collect();
-            let mut candidates: Vec<_> = state
-                .catalog
-                .list_models(None)
-                .into_iter()
-                .filter(|m| connected.contains(&m.provider_id) && m.is_available)
-                .collect();
-            // Prefer tool-capable models (needed for agent mode).
-            candidates.sort_by_key(|m| !m.supports_tools);
-            match candidates.into_iter().next() {
-                Some(m) => {
-                    let _ = state.catalog.set_default_model(&m.full_id());
-                    let _ = app_handle.emit("orion://model_changed", m.full_id());
-                    m
-                }
-                None => {
-                    return Err("No connected provider has a usable model. Open Settings → Providers to connect one.".to_string());
-                }
+        None => match state.catalog.pick_connected_model() {
+            Some(m) => {
+                let _ = state.catalog.set_default_model(&m.full_id());
+                let _ = app_handle.emit("orion://model_changed", m.full_id());
+                m
             }
-        }
+            None => {
+                return Err("No connected provider has a usable model. Open Settings → Providers to connect one.".to_string());
+            }
+        },
     };
     let provider_id = active.provider_id.clone();
     let model_id = active.model_id.clone();

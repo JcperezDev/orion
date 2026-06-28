@@ -841,6 +841,32 @@ impl ModelCatalog {
         self.add_model(&model)
     }
 
+    /// Pick a usable model from a connected provider (has an API key or is
+    /// ollama), preferring tool-capable models. Used to auto-select a model so
+    /// a connected provider is chattable without manual selection.
+    pub fn pick_connected_model(&self) -> Option<ModelInfo> {
+        let connected: std::collections::HashSet<String> = self
+            .list_providers()
+            .into_iter()
+            .filter(|p| {
+                p.id == "ollama"
+                    || self.get_api_key(&p.id).is_some()
+                    || p.api_key_env
+                        .as_ref()
+                        .and_then(|k| std::env::var(k).ok())
+                        .is_some()
+            })
+            .map(|p| p.id)
+            .collect();
+        let mut candidates: Vec<ModelInfo> = self
+            .list_models(None)
+            .into_iter()
+            .filter(|m| connected.contains(&m.provider_id) && m.is_available)
+            .collect();
+        candidates.sort_by_key(|m| !m.supports_tools);
+        candidates.into_iter().next()
+    }
+
     pub fn get_default_model(&self) -> Option<ModelInfo> {
         let conn = self.conn.lock();
         if let Ok(full_id) = conn.query_row(

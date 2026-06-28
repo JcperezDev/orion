@@ -22,7 +22,10 @@ impl Agent {
         let registry = Arc::new(ProviderRegistry::new(catalog.clone()));
         registry.load_from_catalog();
 
-        let default_model = catalog.get_default_model().unwrap_or_else(|| ModelInfo {
+        let default_model = catalog
+            .get_default_model()
+            .or_else(|| catalog.pick_connected_model())
+            .unwrap_or_else(|| ModelInfo {
             id: "openrouter:anthropic/claude-3.5-sonnet".to_string(),
             provider_id: "openrouter".to_string(),
             model_id: "anthropic/claude-3.5-sonnet".to_string(),
@@ -392,7 +395,7 @@ Providers: openrouter, openai, anthropic, ollama, deepseek, groq, mistral, toget
                             Ok(s) if s.is_empty() => break,
                             Ok(s) => print!("{s}"),
                             Err(e) => {
-                                eprintln!("\nError: {}", e);
+                                eprintln!("\n{}", format_provider_error(&e.to_string()));
                                 break;
                             }
                         }
@@ -400,7 +403,7 @@ Providers: openrouter, openai, anthropic, ollama, deepseek, groq, mistral, toget
                     println!();
                 }
                 Err(e) => {
-                    eprintln!("Error: {}", e);
+                    eprintln!("{}", format_provider_error(&e.to_string()));
                 }
             }
         } else {
@@ -578,5 +581,26 @@ Providers: openrouter, openai, anthropic, ollama, deepseek, groq, mistral, toget
         if !result.missing_requirements.is_empty() {
             eprintln!("Missing: {:?}", result.missing_requirements);
         }
+    }
+}
+
+/// Format a provider error for the terminal, surfacing rate/usage limits with
+/// actionable guidance (mirrors the desktop limit banner).
+fn format_provider_error(msg: &str) -> String {
+    use crate::core::ratelimit::{classify_error, ErrorClass};
+    match classify_error(msg) {
+        ErrorClass::RateLimited { retry_after } => {
+            let when = retry_after
+                .map(|s| format!(" Resets in ~{s}s."))
+                .unwrap_or_default();
+            format!(
+                "Usage limit reached.{when} Switch model with `/model <provider:model>`, \
+                 or add credits to this provider.\n  ({msg})"
+            )
+        }
+        ErrorClass::Overloaded => {
+            format!("Provider is overloaded — try again shortly.\n  ({msg})")
+        }
+        _ => format!("Error: {msg}"),
     }
 }
