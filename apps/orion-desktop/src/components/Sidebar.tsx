@@ -131,7 +131,11 @@ export default function Sidebar({ onOpenSettings, workspaceName, workspacePath }
   }
 
   async function handleSelectSession(id: string) {
-    if (id === activeId) return
+    // Always notify so clicking a session (even the active one) returns to chat.
+    if (id === activeId) {
+      notifySessionChange(id)
+      return
+    }
     try {
       await invoke('set_active_session', { id })
       setActiveId(id)

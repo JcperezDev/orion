@@ -536,7 +536,6 @@ function ProvidersSection(props: {
                   ) : (
                     <span>no key</span>
                   )}
-                  {p.models_count > 0 && <> &middot; {p.models_count} models</>}
                 </div>
               </div>
 
@@ -1212,8 +1211,8 @@ function PermissionsSection() {
 
       {/* Add-rule form */}
       <div className="flex items-center" style={{ gap: 8, marginBottom: 10 }}>
-        <select value={newTool} onChange={e => setNewTool(e.target.value)} className="rounded-lg" style={{ background: 'var(--bg-secondary)', border: '0.5px solid var(--border-subtle)', color: 'var(--text-primary)', fontSize: 12, padding: '7px 8px' }}>
-          {(defaults.length ? defaults.map(d => d.tool) : ['bash', 'read', 'write', 'edit', 'grep', 'glob', 'webfetch', 'websearch']).map(t => <option key={t} value={t}>{t}</option>)}
+        <select value={newTool} onChange={e => setNewTool(e.target.value)} className="rounded-lg" style={{ appearance: 'none', WebkitAppearance: 'none', background: 'var(--bg-secondary)', border: '0.5px solid var(--border-subtle)', color: 'var(--text-primary)', fontSize: 12, padding: '7px 22px 7px 8px' }}>
+          {(defaults.length ? defaults.map(d => d.tool) : ['bash', 'read', 'write', 'edit', 'grep', 'glob', 'webfetch', 'websearch']).map(t => <option key={t} value={t} style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}>{t}</option>)}
         </select>
         <input
           value={newPattern}
@@ -1223,10 +1222,10 @@ function PermissionsSection() {
           className="rounded-lg"
           style={{ flex: 1, background: 'var(--bg-secondary)', border: '0.5px solid var(--border-subtle)', color: 'var(--text-primary)', fontSize: 12, padding: '7px 10px', fontFamily: "'JetBrains Mono', monospace" }}
         />
-        <select value={newAction} onChange={e => setNewAction(e.target.value as 'allow' | 'ask' | 'deny')} className="rounded-lg" style={{ background: 'var(--bg-secondary)', border: '0.5px solid var(--border-subtle)', color: actionColor(newAction), fontSize: 12, padding: '7px 8px' }}>
-          <option value="allow">allow</option>
-          <option value="ask">ask</option>
-          <option value="deny">deny</option>
+        <select value={newAction} onChange={e => setNewAction(e.target.value as 'allow' | 'ask' | 'deny')} className="rounded-lg" style={{ appearance: 'none', WebkitAppearance: 'none', background: 'var(--bg-secondary)', border: '0.5px solid var(--border-subtle)', color: actionColor(newAction), fontSize: 12, padding: '7px 22px 7px 8px' }}>
+          <option value="allow" style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}>allow</option>
+          <option value="ask" style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}>ask</option>
+          <option value="deny" style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}>deny</option>
         </select>
         <button onClick={addRule} disabled={!newPattern.trim()} className="rounded-lg" style={{ border: 'none', background: 'var(--accent)', color: '#fff', fontSize: 12, padding: '7px 14px', cursor: newPattern.trim() ? 'pointer' : 'default', opacity: newPattern.trim() ? 1 : 0.5 }}>Add</button>
       </div>

@@ -79,6 +79,21 @@ export default function App() {
     return () => window.removeEventListener('orion:open-settings', onOpen)
   }, [])
 
+  // Selecting / creating a session from the sidebar jumps back to the chat.
+  useEffect(() => {
+    const toChat = (e: Event) => {
+      const detail = (e as CustomEvent).detail
+      if (detail === null) return // a delete with no remaining active session
+      setActiveView('chat')
+    }
+    window.addEventListener('orion:session', toChat)
+    window.addEventListener('orion:new-session', toChat)
+    return () => {
+      window.removeEventListener('orion:session', toChat)
+      window.removeEventListener('orion:new-session', toChat)
+    }
+  }, [])
+
   // Select-to-copy: copy any selected text to the clipboard automatically.
   useEffect(() => {
     const onMouseUp = () => {
