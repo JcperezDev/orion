@@ -81,8 +81,12 @@ export default function ChatHeader({ sessionTitle, sessionId, onTitleChange, tot
       refreshActive()
       onModelChange?.()
     })
+    // Manual selection from the in-app model picker.
+    const onPicked = () => { refreshActive(); onModelChange?.() }
+    window.addEventListener('orion:model-changed', onPicked)
     return () => {
       document.removeEventListener('mousedown', onClick)
+      window.removeEventListener('orion:model-changed', onPicked)
       unlisten.then(fn => fn())
     }
   }, [])

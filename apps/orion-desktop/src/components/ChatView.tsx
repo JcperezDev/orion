@@ -4,6 +4,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import ChatHeader from './ChatHeader'
 import MessageList, { ChatMessage } from './MessageList'
 import InputArea, { type SubmitPayload } from './InputArea'
+import { ModelPicker } from './ModelPicker'
 
 interface Session {
   id: string
@@ -49,6 +50,7 @@ export default function ChatView() {
   const [undoable, setUndoable] = useState<{ id: string; summary: string; paths: string[] } | null>(null)
   const [limitInfo, setLimitInfo] = useState<{ message: string; retryAfter: number | null } | null>(null)
   const [retryInfo, setRetryInfo] = useState<{ attempt: number; delaySecs: number } | null>(null)
+  const [pickerOpen, setPickerOpen] = useState(false)
   const lastSubmitRef = useRef<{ text: string; mode?: string } | null>(null)
   // Mirror of `messages` so handlers can read the latest history without being
   // re-created on every message.
@@ -291,39 +293,19 @@ export default function ChatView() {
           'Available commands:',
           '  /clear       — clear all messages',
           '  /help        — show this help',
-          '  /providers   — list connected providers',
-          '  /model       — show the active model',
+          '  /model       — open the model picker',
+          '  /models      — open the model picker',
+          '  /providers   — open the model picker (connect / switch)',
           '  /sync        — sync models for the active provider',
         ].join('\n'))
         break
 
+      // Configuration commands open an interactive picker instead of dumping text.
       case '/providers':
-        try {
-          const providers = await invoke<Array<{ id: string; name: string; has_api_key: boolean; models_count: number }>>('get_connected_providers')
-          const lines = providers.map(p =>
-            `  ${p.has_api_key ? '●' : '○'} ${p.name.padEnd(20)} ${p.models_count} models`
-          )
-          pushSystem(`Providers (${providers.length}):\n${lines.join('\n') || '  (none)'}`)
-        } catch (e) {
-          pushError(String(e))
-        }
+      case '/models':
+      case '/model':
+        setPickerOpen(true)
         break
-
-      case '/model': {
-        try {
-          const [modelId, models] = await Promise.all([
-            invoke<string | null>('get_default_model'),
-            invoke<Array<{ provider: string; id: string; name: string; context_window?: number }>>('list_models', { provider: null }),
-          ])
-          const list = models.slice(0, 8).map(m =>
-            `  ${m.provider}:${m.id.padEnd(28)} ${m.context_window ? m.context_window.toLocaleString() + ' ctx' : ''}`
-          ).join('\n')
-          pushSystem(`Active model: ${modelId ?? 'none'}\nAvailable models (${models.length}, showing 8):\n${list}`)
-        } catch (e) {
-          pushError(String(e))
-        }
-        break
-      }
 
       case '/sync': {
         try {
@@ -468,6 +450,14 @@ export default function ChatView() {
         onSubmit={handleSubmit}
         onUserMessage={pushMessage}
         onSendingChange={() => {}}
+      />
+      <ModelPicker
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        onSelected={() => {
+          refreshContextWindow()
+          window.dispatchEvent(new CustomEvent('orion:model-changed'))
+        }}
       />
     </div>
   )

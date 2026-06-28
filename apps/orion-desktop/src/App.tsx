@@ -64,6 +64,13 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey)
   }, [activeView, showOnboarding])
 
+  // Open Settings on request (e.g. "Connect" from the model picker).
+  useEffect(() => {
+    const onOpen = () => setActiveView('settings')
+    window.addEventListener('orion:open-settings', onOpen)
+    return () => window.removeEventListener('orion:open-settings', onOpen)
+  }, [])
+
   async function checkOnboarding() {
     try {
       const connected = await invoke<Provider[]>('get_connected_providers')
