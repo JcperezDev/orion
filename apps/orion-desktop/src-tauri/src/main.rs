@@ -2,6 +2,7 @@
 
 use orion_core::core::dispatch::{DispatchConfig, DispatchEvent, Dispatcher};
 use orion_core::memory::project::{merged_system_prompt, ProjectMemoryLoader};
+use orion_core::SpillManager;
 use orion_core::models::catalog::{ModelInfo, ProviderInfo, Session};
 use orion_core::permissions::{Action as PermissionAction, PermissionConfig, PermissionEngine};
 use orion_core::providers::registry::ProviderRegistry;
@@ -12,7 +13,9 @@ use orion_core::tools::{
 use orion_core::ModelCatalog;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Instant;
 use tauri::{AppHandle, Emitter, State};
@@ -28,6 +31,10 @@ pub struct AppState {
     pub dispatcher: Arc<Dispatcher>,
     pub project_memory: StdMutex<Vec<orion_core::memory::project::ProjectMemory>>,
     pub approvals: Arc<ApprovalBridge>,
+    pub cancel_flag: Arc<AtomicBool>,
+    /// Pre-edit file contents for reversible edits, keyed by tool_call_id.
+    /// `None` content = the file was newly created (undo deletes it).
+    pub undo_stack: StdMutex<HashMap<String, Vec<(PathBuf, Option<String>)>>>,
 }
 
 pub struct ApprovalBridge {
@@ -447,7 +454,11 @@ async fn send_message(
     content: String,
     mode: Option<String>,
 ) -> Result<String, String> {
-    let _ = mode;
+    state.cancel_flag.store(false, Ordering::SeqCst);
+
+    let resolved_mode = mode.as_deref().unwrap_or("build");
+    let agent_mode = resolved_mode == "agent";
+    let plan_mode = resolved_mode == "plan";
 
     // Resolve active model (provider:model format).
     let active = state
@@ -462,13 +473,15 @@ async fn send_message(
         .get_or_create(&provider_id)
         .ok_or_else(|| format!("provider not available: {provider_id}"))?;
 
-    let agent_mode = mode.as_deref() == Some("agent");
-
     if !agent_mode {
-        // Existing chat-only path: stream text and emit orion://token events.
+        // Chat-only path (build or plan): stream text and emit orion://token events.
         let msgs = vec![Message {
             role: "user".to_string(),
-            content: content.clone(),
+            content: if plan_mode {
+                format!("[PLAN MODE]\n{}", content)
+            } else {
+                content.clone()
+            },
             ..Default::default()
         }];
 
@@ -480,6 +493,11 @@ async fn send_message(
 
         let mut full_response = String::new();
         while let Some(chunk) = stream.next().await {
+            if state.cancel_flag.load(Ordering::SeqCst) {
+                state.cancel_flag.store(false, Ordering::SeqCst);
+                let _ = app_handle.emit("orion://done", ());
+                return Ok(full_response);
+            }
             match chunk {
                 Ok(token) => {
                     full_response.push_str(&token);
@@ -504,10 +522,23 @@ async fn send_message(
             app: app_handle.clone(),
             bridge: state.approvals.clone(),
         });
+        let full_access = state.catalog.get_bool_config("full_access");
+        let mut dispatch_cfg = DispatchConfig::new(cwd.clone())
+            .with_approval(approval_channel)
+            .with_spill(SpillManager::new_temp())
+            .with_plan_mode(plan_mode)
+            .with_full_access(full_access);
+        // Load this project's learned "always allow" rules and keep the store
+        // so new approvals persist.
+        if let Ok(store) = orion_core::LearnedStore::open() {
+            let store = Arc::new(store);
+            let _ = store.hydrate(&state.permissions, &cwd);
+            dispatch_cfg = dispatch_cfg.with_learned(store);
+        }
         let dispatcher = Dispatcher::new(
             state.tools.clone(),
             state.permissions.clone(),
-            DispatchConfig::new(cwd).with_approval(approval_channel),
+            dispatch_cfg,
         );
 
         let mut messages = Vec::new();
@@ -534,6 +565,10 @@ async fn send_message(
 
         let mut full_response = String::new();
         for ev in events {
+            if state.cancel_flag.load(Ordering::SeqCst) {
+                state.cancel_flag.store(false, Ordering::SeqCst);
+                break;
+            }
             match ev {
                 DispatchEvent::Token(text) => {
                     full_response.push_str(&text);
@@ -552,6 +587,24 @@ async fn send_message(
                         }),
                     );
                 }
+                DispatchEvent::StepSnapshot(_snap) => {
+                    // UI can optionally store snapshots for undo
+                }
+                DispatchEvent::Undoable { tool_call_id, paths, summary, before } => {
+                    state
+                        .undo_stack
+                        .lock()
+                        .unwrap()
+                        .insert(tool_call_id.clone(), before);
+                    let _ = app_handle.emit(
+                        "orion://undoable",
+                        serde_json::json!({
+                            "tool_call_id": tool_call_id,
+                            "paths": paths.iter().map(|p| p.to_string_lossy().to_string()).collect::<Vec<_>>(),
+                            "summary": summary,
+                        }),
+                    );
+                }
                 DispatchEvent::Done { .. } => {
                     let _ = app_handle.emit("orion://done", ());
                 }
@@ -562,9 +615,16 @@ async fn send_message(
             }
         }
 
+        let _ = app_handle.emit("orion://done", ());
         let _ = state.catalog.touch_session(&session_id);
         Ok(full_response)
     }
+}
+
+#[tauri::command]
+fn cancel_generation(state: State<'_, AppState>) -> Result<(), String> {
+    state.cancel_flag.store(true, Ordering::SeqCst);
+    Ok(())
 }
 
 #[tauri::command]
@@ -673,6 +733,46 @@ fn add_permission_rule(
     state.permissions.add_rule(&tool, &pattern, act)
 }
 
+/// Undo a reversible edit: restore each target to its pre-edit content (or
+/// delete it if it was newly created). Returns the restored file paths.
+#[tauri::command]
+fn undo_changes(state: State<'_, AppState>, tool_call_id: String) -> Result<Vec<String>, String> {
+    let entry = state.undo_stack.lock().unwrap().remove(&tool_call_id);
+    let files = entry.ok_or_else(|| "nothing to undo for this action".to_string())?;
+    let mut restored = Vec::new();
+    for (path, before) in files {
+        match before {
+            Some(content) => {
+                if let Some(parent) = path.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                std::fs::write(&path, content).map_err(|e| e.to_string())?;
+            }
+            None => {
+                // File was newly created by the edit — remove it.
+                let _ = std::fs::remove_file(&path);
+            }
+        }
+        restored.push(path.to_string_lossy().to_string());
+    }
+    Ok(restored)
+}
+
+/// Read the master "full access" switch (Trust Engine off → allow everything).
+#[tauri::command]
+fn get_full_access(state: State<'_, AppState>) -> bool {
+    state.catalog.get_bool_config("full_access")
+}
+
+/// Toggle the master "full access" switch. Persisted in the shared catalog DB.
+#[tauri::command]
+fn set_full_access(state: State<'_, AppState>, enabled: bool) -> Result<(), String> {
+    state
+        .catalog
+        .set_config("full_access", if enabled { "true" } else { "false" })
+        .map_err(|e| e.to_string())
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ProjectMemoryDto {
     pub path: String,
@@ -756,10 +856,12 @@ fn main() {
 
     let tools = Arc::new(builtin_registry());
     let permissions = Arc::new(PermissionEngine::new(PermissionConfig::safe_defaults()));
+    let cfg = DispatchConfig::new(std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")))
+        .with_spill(SpillManager::new_temp());
     let dispatcher = Arc::new(Dispatcher::new(
         tools.clone(),
         permissions.clone(),
-        DispatchConfig::new(std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))),
+        cfg,
     ));
 
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
@@ -776,6 +878,8 @@ fn main() {
         dispatcher,
         project_memory: StdMutex::new(project_memory),
         approvals,
+        cancel_flag: Arc::new(AtomicBool::new(false)),
+        undo_stack: StdMutex::new(HashMap::new()),
     };
 
     tauri::Builder::default()
@@ -809,9 +913,13 @@ fn main() {
             rename_session,
             list_tools,
             add_permission_rule,
+            get_full_access,
+            set_full_access,
+            undo_changes,
             get_project_memory,
             reload_project_memory,
             submit_approval,
+            cancel_generation,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

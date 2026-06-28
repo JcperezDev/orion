@@ -24,6 +24,10 @@ pub struct SessionRecord {
     pub created_at: String,
     pub updated_at: String,
     pub messages: Vec<MessageRecord>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fork_seq: Option<i64>,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
@@ -38,6 +42,10 @@ pub struct Settings {
     pub language: Option<String>,
     #[serde(default)]
     pub auto_accept_permissions: Option<bool>,
+    /// Master switch: when true, the Trust Engine allows every tool call with
+    /// no prompts (full, unrestricted access — rm, curl, /etc, /home, …).
+    #[serde(default)]
+    pub full_access: Option<bool>,
     #[serde(default)]
     pub show_reasoning: Option<bool>,
     #[serde(default)]
@@ -174,6 +182,14 @@ impl MemoryStore {
             );
             CREATE INDEX IF NOT EXISTS idx_session_messages
                 ON session_messages(session_id, seq);
+            CREATE TABLE IF NOT EXISTS session_branches (
+                session_id TEXT NOT NULL,
+                parent_id TEXT NOT NULL,
+                fork_seq INTEGER,
+                branch_name TEXT DEFAULT '',
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (session_id, parent_id)
+            );
             "#,
         )?;
         Ok(())
@@ -222,8 +238,92 @@ impl MemoryStore {
             created_at: now.clone(),
             updated_at: now,
             messages: Vec::new(),
+            parent_id: None,
+            fork_seq: None,
         };
         self.sessions.lock().insert(id.to_string(), record);
+        Ok(())
+    }
+
+    /// Fork a session at a given message sequence.
+    /// Copies all messages up to (and including) `fork_seq` into a new session.
+    pub async fn fork_session(
+        &self,
+        new_id: &str,
+        source_id: &str,
+        fork_seq: Option<i64>,
+        title: Option<&str>,
+    ) -> Result<()> {
+        let now = chrono::Utc::now().to_rfc3339();
+
+        // Get source session metadata
+        let source = self.sessions.lock().get(source_id).cloned().ok_or_else(|| {
+            anyhow::anyhow!("source session not found: {source_id}")
+        })?;
+
+        // Create the forked session
+        let record = SessionRecord {
+            id: new_id.to_string(),
+            title: title.unwrap_or(&format!("{} (fork)", source.title)).to_string(),
+            provider: source.provider.clone(),
+            model: source.model.clone(),
+            created_at: now.clone(),
+            updated_at: now.clone(),
+            messages: Vec::new(),
+            parent_id: Some(source_id.to_string()),
+            fork_seq,
+        };
+        self.sessions.lock().insert(new_id.to_string(), record);
+
+        // Copy messages up to fork_seq (or all if None)
+        let conn = self.conn.lock();
+        let query = if fork_seq.is_some() {
+            "SELECT role, content, created_at FROM session_messages
+             WHERE session_id = ?1 AND seq <= ?2 ORDER BY seq ASC"
+        } else {
+            "SELECT role, content, created_at FROM session_messages
+             WHERE session_id = ?1 ORDER BY seq ASC"
+        };
+
+        let mut stmt = conn.prepare(query)?;
+        let row_iter: Vec<(String, String, String)> = if let Some(seq) = fork_seq {
+            stmt.query_map(params![source_id, seq], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            })?
+            .filter_map(|r| r.ok())
+            .collect()
+        } else {
+            stmt.query_map(params![source_id], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            })?
+            .filter_map(|r| r.ok())
+            .collect()
+        };
+
+        let mut insert = conn.prepare(
+            "INSERT INTO session_messages (session_id, role, content, created_at)
+             VALUES (?1, ?2, ?3, ?4)",
+        )?;
+        for (role, content, created_at) in &row_iter {
+            insert.execute(params![new_id, role, content, created_at])?;
+        }
+        drop(insert);
+
+        // Record the branch relationship
+        conn.execute(
+            "INSERT INTO session_branches (session_id, parent_id, fork_seq, branch_name, created_at)
+             VALUES (?1, ?2, ?3, '', ?4)",
+            params![new_id, source_id, fork_seq, now],
+        )?;
+
         Ok(())
     }
 

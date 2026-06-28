@@ -219,6 +219,52 @@ export default function MessageList({ messages }: Props) {
     [messages]
   )
 
+  if (messages.length === 0) {
+    return (
+      <div className="message-list" ref={containerRef}>
+        <div className="welcome-screen">
+          <div className="welcome-content">
+            <div className="welcome-logo">ORION</div>
+            <div className="welcome-subtitle">Asistente de codificación con IA</div>
+            <div className="welcome-shortcuts">
+              <div className="welcome-section-title">Atajos</div>
+              <div className="shortcut-row">
+                <span className="shortcut-keys"><kbd>Enter</kbd></span>
+                <span>Enviar mensaje</span>
+              </div>
+              <div className="shortcut-row">
+                <span className="shortcut-keys"><kbd>Shift</kbd> + <kbd>Enter</kbd></span>
+                <span>Nueva línea</span>
+              </div>
+              <div className="shortcut-row">
+                <span className="shortcut-keys"><kbd>Ctrl</kbd> + <kbd>,</kbd></span>
+                <span>Abrir configuración</span>
+              </div>
+            </div>
+            <div className="welcome-modes">
+              <div className="welcome-section-title">Modos</div>
+              <div className="mode-card-row">
+                <div className="mode-card">
+                  <div className="mode-card-title">Build</div>
+                  <div className="mode-card-desc">Respuesta directa del modelo, sin herramientas</div>
+                </div>
+                <div className="mode-card">
+                  <div className="mode-card-title">Plan</div>
+                  <div className="mode-card-desc">Solo lectura: explora el código sin editarlo</div>
+                </div>
+                <div className="mode-card">
+                  <div className="mode-card-title">Agent</div>
+                  <div className="mode-card-desc">ORION usa herramientas: leer, escribir, bash, MCP</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div ref={bottomRef} />
+      </div>
+    )
+  }
+
   return (
     <div className="message-list" ref={containerRef}>
       <div className="message-list-inner">

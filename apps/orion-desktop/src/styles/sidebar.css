@@ -82,6 +82,31 @@
   border-color: var(--border-mid, #2a2a38);
 }
 
+.sidebar-search {
+  padding: 4px 10px 6px;
+}
+
+.sidebar-search-input {
+  width: 100%;
+  background: var(--bg-primary, #0a0a0c);
+  border: 0.5px solid var(--border-mid, #2a2a38);
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--text-primary, #e2e0f0);
+  outline: none;
+  transition: border-color 0.12s;
+}
+
+.sidebar-search-input::placeholder {
+  color: var(--text-tertiary, #4a4866);
+}
+
+.sidebar-search-input:focus {
+  border-color: var(--accent, #534AB7);
+}
+
 .sessions-label {
   font-size: 10px;
   font-weight: 500;

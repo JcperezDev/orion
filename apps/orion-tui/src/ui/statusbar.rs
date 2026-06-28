@@ -7,12 +7,17 @@ use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::Frame;
 
 pub fn render(f: &mut Frame, state: &AppState, area: Rect, theme: &Theme) {
+    let status_icon = if state.is_processing {
+        "⟳"
+    } else {
+        "*"
+    };
+
     let title = format!(
-        " {} ORION  │  Model: {}  │  Tokens: {}  │  Cost: ${:.4}  │  MCPs: {} ",
-        "*",
+        " {} ORION  │  Model: {}  │  Tokens: {}  │  MCPs: {} ",
+        status_icon,
         state.current_model,
         state.token_count,
-        state.cost_total,
         state.connected_mcps.len()
     );
 

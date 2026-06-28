@@ -857,6 +857,31 @@ impl ModelCatalog {
         rows.filter_map(|r| r.ok()).collect()
     }
 
+    /// Generic key/value config, shared across CLI + desktop (same DB).
+    pub fn set_config(&self, key: &str, value: &str) -> Result<()> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "INSERT OR REPLACE INTO config (key, value) VALUES (?1, ?2)",
+            params![key, value],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_config(&self, key: &str) -> Option<String> {
+        let conn = self.conn.lock();
+        conn.query_row(
+            "SELECT value FROM config WHERE key = ?1",
+            [key],
+            |row| row.get(0),
+        )
+        .ok()
+    }
+
+    /// Read a boolean config flag (e.g. the `full_access` master switch).
+    pub fn get_bool_config(&self, key: &str) -> bool {
+        self.get_config(key).as_deref() == Some("true")
+    }
+
     pub fn save_api_key(&self, provider_id: &str, api_key: &str) -> Result<()> {
         let conn = self.conn.lock();
         conn.execute(
@@ -925,6 +950,18 @@ impl ModelCatalog {
             Self::row_to_session,
         )
         .ok()
+    }
+
+    /// Best-effort: list messages for a session.
+    ///
+    /// The catalog schema does not store full message transcripts (those live
+    /// in `MemoryStore`). This method returns `None` when the catalog can't
+    /// supply them, so callers can fall back to the memory store.
+    pub fn list_messages_for_session(
+        &self,
+        _session_id: &str,
+    ) -> Option<Vec<(String, String, Option<String>, Option<String>)>> {
+        None
     }
 
     pub fn create_session(&self, title: Option<&str>) -> Result<Session> {

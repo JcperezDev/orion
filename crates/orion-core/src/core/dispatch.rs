@@ -1,17 +1,33 @@
+use crate::agents::AgentSpec;
+use crate::core::snapshot::{SnapshotManager, StepSnapshot};
+use crate::core::spill::SpillManager;
+use crate::permissions::store::LearnedStore;
+use crate::permissions::trust::{self, sticky_pattern_for};
+use crate::permissions::{Action, PermissionEngine};
 use crate::providers::traits::{ChatRequest, LlmProvider, Message, RequestedToolCall};
 use crate::tools::{
-    ApprovalChannel, ApprovalRequest, ApprovalResponse, StreamChunk, Tool, ToolCall, ToolContext,
+    ApprovalChannel, ApprovalRequest, ApprovalResponse, StreamChunk, ToolCall, ToolContext,
     ToolRegistry,
 };
-use crate::permissions::{Action, PermissionEngine};
 use anyhow::Result;
 use futures::StreamExt;
+use std::collections::HashMap;
 use std::sync::Arc;
+
+const DOOM_LOOP_THRESHOLD: usize = 3;
 
 pub struct DispatchConfig {
     pub max_steps: usize,
     pub cwd: std::path::PathBuf,
     pub approval: Arc<dyn ApprovalChannel>,
+    pub plan_mode: bool,
+    pub spill: Option<SpillManager>,
+    /// Active agent, used by the Trust Engine to enforce per-agent tool gating.
+    pub agent: Option<AgentSpec>,
+    /// Persistent store for "always allow" decisions (per project).
+    pub learned: Option<Arc<LearnedStore>>,
+    /// Master switch: when on, the Trust Engine allows everything (no prompts).
+    pub full_access: bool,
 }
 
 impl DispatchConfig {
@@ -20,6 +36,11 @@ impl DispatchConfig {
             max_steps: 25,
             cwd,
             approval: Arc::new(NoopApproval),
+            plan_mode: false,
+            spill: None,
+            agent: None,
+            learned: None,
+            full_access: false,
         }
     }
 
@@ -27,9 +48,34 @@ impl DispatchConfig {
         self.approval = approval;
         self
     }
+
+    pub fn with_plan_mode(mut self, plan: bool) -> Self {
+        self.plan_mode = plan;
+        self
+    }
+
+    pub fn with_spill(mut self, spill: SpillManager) -> Self {
+        self.spill = Some(spill);
+        self
+    }
+
+    pub fn with_agent(mut self, agent: AgentSpec) -> Self {
+        self.agent = Some(agent);
+        self
+    }
+
+    pub fn with_learned(mut self, learned: Arc<LearnedStore>) -> Self {
+        self.learned = Some(learned);
+        self
+    }
+
+    pub fn with_full_access(mut self, full_access: bool) -> Self {
+        self.full_access = full_access;
+        self
+    }
 }
 
-struct NoopApproval;
+pub struct NoopApproval;
 
 #[async_trait::async_trait]
 impl ApprovalChannel for NoopApproval {
@@ -42,6 +88,16 @@ pub enum DispatchEvent {
     Token(String),
     ToolCall(ToolCall),
     ToolResult { tool_call_id: String, content: String, is_error: bool },
+    StepSnapshot(StepSnapshot),
+    /// A reversible action (file edit inside the workspace) just ran — the UI
+    /// can offer an "Undo" affordance. `before` carries each target's content
+    /// prior to the edit (None = the file was newly created → undo deletes it).
+    Undoable {
+        tool_call_id: String,
+        paths: Vec<std::path::PathBuf>,
+        summary: String,
+        before: Vec<(std::path::PathBuf, Option<String>)>,
+    },
     Done { steps: usize, final_text: String },
     Error(String),
 }
@@ -70,11 +126,55 @@ impl Dispatcher {
     ) -> Result<Vec<DispatchEvent>> {
         let mut events: Vec<DispatchEvent> = Vec::new();
         let mut current_messages = messages;
-        let tool_defs_openai = self.registry.openai_tools();
-        let tool_defs_anthropic = self.registry.anthropic_tools();
+
+        // Plan mode: inject system prompt and restrict tools
+        if self.config.plan_mode {
+            let plan_prompt = "You are in plan mode. You can read files, search code, and explore the codebase, but you CANNOT make any edits, write files, execute shell commands, or apply patches. Only use read-only tools like `read`, `grep`, `glob`, `webfetch`, and `websearch`. If asked to make changes, explain what changes would be needed but do NOT attempt to execute them.";
+            current_messages.insert(0, Message {
+                role: "system".into(),
+                content: plan_prompt.into(),
+                ..Default::default()
+            });
+        }
+
+        let all_tools_openai = self.registry.openai_tools();
+        let all_tools_anthropic = self.registry.anthropic_tools();
         let use_anthropic = provider_id == "anthropic";
 
+        // Doom loop tracker: (tool_name, args_signature) -> count
+        let mut call_history: HashMap<(String, String), usize> = HashMap::new();
+        let plan_active = self.config.plan_mode;
+
         for step in 0..self.config.max_steps {
+            // Filter tools based on plan mode
+            let destructive = ["write", "edit", "bash", "apply_patch"];
+            let tool_defs_openai: Vec<serde_json::Value> = if plan_active {
+                all_tools_openai.iter()
+                    .filter(|t| {
+                        t.pointer("/function/name")
+                            .and_then(|n| n.as_str())
+                            .map(|n| !destructive.contains(&n))
+                            .unwrap_or(true)
+                    })
+                    .cloned()
+                    .collect()
+            } else {
+                all_tools_openai.clone()
+            };
+            let tool_defs_anthropic: Vec<serde_json::Value> = if plan_active {
+                all_tools_anthropic.iter()
+                    .filter(|t| {
+                        t.pointer("/name")
+                            .and_then(|n| n.as_str())
+                            .map(|n| !destructive.contains(&n))
+                            .unwrap_or(true)
+                    })
+                    .cloned()
+                    .collect()
+            } else {
+                all_tools_anthropic.clone()
+            };
+
             let request = ChatRequest {
                 model: model.to_string(),
                 messages: current_messages.clone(),
@@ -173,38 +273,139 @@ impl Dispatcher {
                 ..Default::default()
             });
 
+            // Snapshot: capture file states before executing destructive tools.
+            let snapshot_targets = SnapshotManager::extract_targets(&step_tool_calls, &self.config.cwd);
+            let mut step_snap = SnapshotManager::new();
+            step_snap.capture(&snapshot_targets);
+
             // Execute each tool and append tool messages.
             let ctx = ToolContext::new(self.config.cwd.clone()).with_approval(self.config.approval.clone());
             for call in step_tool_calls {
                 events.push(DispatchEvent::ToolCall(call.clone()));
 
-                let decision = self
-                    .permissions
-                    .check(call.name.split('.').next().unwrap_or(call.name.as_str()), &self.action_desc_for(&call));
-                match decision {
-                    Action::Deny => {
-                        let content = "denied by permissions".to_string();
-                        current_messages.push(Message {
-                            role: "tool".into(),
-                            content: content.clone(),
-                            tool_call_id: Some(call.id.clone()),
-                            is_error: true,
-                            ..Default::default()
-                        });
-                        events.push(DispatchEvent::ToolResult {
-                            tool_call_id: call.id,
-                            content,
-                            is_error: true,
-                        });
-                        continue;
+                // --- Doom loop detection ---
+                let args_sig = normalize_args_for_doom(&call.arguments);
+                let key = (call.name.clone(), args_sig);
+                let count = call_history.entry(key).or_insert(0);
+                *count += 1;
+                if *count >= DOOM_LOOP_THRESHOLD {
+                    let doom_request = ApprovalRequest {
+                        tool_name: "doom_loop".into(),
+                        action: format!(
+                            "The model called `{}` with identical arguments {} times. Allow to continue?",
+                            call.name, *count
+                        ),
+                        matched_pattern: None,
+                        arguments: call.arguments.clone(),
+                    };
+                    match ctx.ask(doom_request).await {
+                        ApprovalResponse::Deny => {
+                            events.push(DispatchEvent::Done {
+                                steps: step + 1,
+                                final_text: format!(
+                                    "Stopped because `{}` was called {} times with identical arguments.",
+                                    call.name, *count
+                                ),
+                            });
+                            return Ok(events);
+                        }
+                        ApprovalResponse::Allow | ApprovalResponse::AllowAlways => {
+                            // Reset the counter so it doesn't keep asking every time
+                            *count = 0;
+                        }
                     }
-                    Action::Allow | Action::Ask => {}
+                }
+
+                let action_desc = self.action_desc_for(&call);
+                let short_name = tool_name(&call.name);
+                let decision = trust::decide(
+                    &self.permissions,
+                    self.config.agent.as_ref(),
+                    self.config.full_access,
+                    short_name,
+                    &call,
+                    &action_desc,
+                    &self.config.cwd,
+                );
+
+                // Resolve the decision into "should we run this tool?".
+                let mut deny_reason: Option<String> = None;
+                match decision.action {
+                    Action::Allow => {}
+                    Action::Deny => {
+                        deny_reason = Some(format!("denied by permissions: {}", decision.reason));
+                    }
+                    Action::Ask => {
+                        let req = ApprovalRequest {
+                            tool_name: call.name.clone(),
+                            action: decision.reason.clone(),
+                            matched_pattern: decision.matched_pattern.clone(),
+                            arguments: call.arguments.clone(),
+                        };
+                        match ctx.ask(req).await {
+                            ApprovalResponse::Deny => {
+                                deny_reason = Some("denied by user".to_string());
+                            }
+                            ApprovalResponse::Allow => {}
+                            ApprovalResponse::AllowAlways => {
+                                // Persist a scoped rule so we never ask again.
+                                let pattern = decision
+                                    .matched_pattern
+                                    .clone()
+                                    .unwrap_or_else(|| sticky_pattern_for(&call, &action_desc));
+                                let _ = self.permissions.add_rule(short_name, &pattern, Action::Allow);
+                                if let Some(store) = &self.config.learned {
+                                    let _ = store.add(&self.config.cwd, short_name, &pattern, Action::Allow);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if let Some(reason) = deny_reason {
+                    current_messages.push(Message {
+                        role: "tool".into(),
+                        content: reason.clone(),
+                        tool_call_id: Some(call.id.clone()),
+                        is_error: true,
+                        ..Default::default()
+                    });
+                    events.push(DispatchEvent::ToolResult {
+                        tool_call_id: call.id,
+                        content: reason,
+                        is_error: true,
+                    });
+                    continue;
+                }
+
+                // The action was approved. If it is reversible (a file edit
+                // inside the workspace) surface an Undo affordance.
+                if decision.reversible {
+                    let paths = SnapshotManager::extract_targets(
+                        std::slice::from_ref(&call),
+                        &self.config.cwd,
+                    );
+                    if !paths.is_empty() {
+                        // `step_snap` captured the pre-edit content at step start.
+                        let before = step_snap.captured(&paths);
+                        events.push(DispatchEvent::Undoable {
+                            tool_call_id: call.id.clone(),
+                            paths,
+                            summary: action_desc.clone(),
+                            before,
+                        });
+                    }
                 }
 
                 if let Some(tool) = self.registry.get(&call.name) {
                     match tool.execute(call.arguments.clone(), &ctx).await {
                         Ok(result) => {
-                            let content = if result.content.len() > 50_000 {
+                            let content = if let Some(ref spill) = self.config.spill {
+                                spill.spill(&result.content, &call.id)
+                                    .ok()
+                                    .flatten()
+                                    .unwrap_or(result.content.clone())
+                            } else if result.content.len() > 50_000 {
                                 format!(
                                     "{}...\n[truncated]",
                                     &result.content[..50_000]
@@ -257,6 +458,23 @@ impl Dispatcher {
                     });
                 }
             }
+
+            // Compute and emit snapshot patches for this step.
+            let patches = step_snap.diff();
+            events.push(DispatchEvent::StepSnapshot(StepSnapshot {
+                step,
+                patches,
+            }));
+
+            // Context compaction: if messages exceed the budget, spill oldest.
+            use crate::core::compactor::ContextCompactor;
+            let compactor = ContextCompactor::default();
+            if compactor.should_compact(&current_messages) {
+                let marker = self.config.spill.as_ref()
+                    .map(|_| "[previous output spilled to disk]")
+                    .unwrap_or("[previous output truncated]");
+                compactor.compact(&mut current_messages, marker);
+            }
         }
 
         events.push(DispatchEvent::Error(format!(
@@ -273,12 +491,35 @@ impl Dispatcher {
             call.name.clone()
         }
     }
+
+    /// Check a bash invocation: explicit permission rules per segment, falling
+    /// back to AST risk classification (see [`trust::bash_action`]).
+    fn check_bash_permissions(&self, command_string: &str) -> Action {
+        trust::bash_action(&self.permissions, command_string, &self.config.cwd).0
+    }
+}
+
+fn tool_name(full_name: &str) -> &str {
+    full_name.split('.').next().unwrap_or(full_name)
+}
+
+/// Normalize tool arguments for doom-loop comparison.
+/// Strips non-deterministic fields (ids, timestamps) to avoid false positives.
+fn normalize_args_for_doom(args: &serde_json::Value) -> String {
+    let mut simplified = args.clone();
+    if let Some(obj) = simplified.as_object_mut() {
+        obj.remove("id");
+        obj.remove("timeout_secs");
+        obj.remove("num_results");
+        obj.remove("tool_call_id");
+    }
+    simplified.to_string()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::permissions::PermissionConfig;
+    use crate::permissions::{PermissionConfig, Rule};
     use crate::tools::{Tool, ToolContext, ToolResult};
     use async_trait::async_trait;
 
@@ -318,7 +559,6 @@ mod tests {
     use crate::providers::traits::{ChunkStream, TokenStream};
     use futures::stream;
     use parking_lot::Mutex;
-    use std::pin::Pin;
 
     struct ScriptedProvider {
         scripts: Mutex<Vec<Vec<StreamChunk>>>,
@@ -457,5 +697,162 @@ mod tests {
             .expect("should produce a tool result");
         assert!(r.0, "tool result should be an error");
         assert!(r.1.contains("unknown tool"), "got: {}", r.1);
+    }
+
+    /// An approval channel that returns scripted responses and records which
+    /// tools it was asked about.
+    struct ScriptedApproval {
+        responses: Mutex<Vec<ApprovalResponse>>,
+        asked: Mutex<Vec<String>>,
+    }
+
+    #[async_trait]
+    impl ApprovalChannel for ScriptedApproval {
+        async fn request_approval(&self, request: ApprovalRequest) -> ApprovalResponse {
+            self.asked.lock().push(request.tool_name.clone());
+            let mut r = self.responses.lock();
+            if r.is_empty() {
+                ApprovalResponse::Deny
+            } else {
+                r.remove(0)
+            }
+        }
+    }
+
+    /// A tool whose name isn't auto-allowed, so the Trust Engine defaults to Ask.
+    struct DangerTool;
+
+    #[async_trait]
+    impl Tool for DangerTool {
+        fn name(&self) -> &str { "danger" }
+        fn description(&self) -> &str { "a tool that needs approval" }
+        fn parameters(&self) -> serde_json::Value {
+            serde_json::json!({"type": "object", "properties": {}})
+        }
+        fn requires_permission(&self) -> crate::tools::PermissionKind {
+            crate::tools::PermissionKind::Bash
+        }
+        async fn execute(&self, _args: serde_json::Value, _ctx: &ToolContext) -> Result<ToolResult> {
+            Ok(ToolResult { tool_call_id: String::new(), content: "ran".into(), is_error: false })
+        }
+    }
+
+    fn danger_call() -> ToolCall {
+        ToolCall { id: "c1".into(), name: "danger".into(), arguments: serde_json::json!({}) }
+    }
+
+    #[tokio::test]
+    async fn ask_decision_actually_prompts_and_deny_blocks() {
+        // Regression test: previously `Ask` silently executed without prompting.
+        let approval = Arc::new(ScriptedApproval {
+            responses: Mutex::new(vec![ApprovalResponse::Deny]),
+            asked: Mutex::new(Vec::new()),
+        });
+        let provider = ScriptedProvider::new(vec![
+            vec![
+                StreamChunk::ToolCall { call: danger_call() },
+                StreamChunk::Done { stop_reason: Some("tool_use".into()) },
+            ],
+            vec![StreamChunk::Done { stop_reason: Some("stop".into()) }],
+        ]);
+
+        let mut reg = ToolRegistry::new();
+        reg.register(Arc::new(DangerTool));
+        let dispatcher = Dispatcher::new(
+            Arc::new(reg),
+            Arc::new(PermissionEngine::new(PermissionConfig::safe_defaults())),
+            DispatchConfig::new(std::env::temp_dir()).with_approval(approval.clone()),
+        );
+
+        let events = dispatcher
+            .run(provider, "scripted", "m", vec![Message { role: "user".into(), content: "go".into(), ..Default::default() }])
+            .await
+            .unwrap();
+
+        // The channel WAS consulted (the bug would have skipped it).
+        assert_eq!(approval.asked.lock().len(), 1);
+        // And the denied call produced an error tool result, not an execution.
+        let denied = events.iter().any(|e| matches!(
+            e,
+            DispatchEvent::ToolResult { is_error: true, content, .. } if content.contains("denied")
+        ));
+        assert!(denied, "denied call should yield an error result");
+    }
+
+    #[tokio::test]
+    async fn allow_always_persists_and_stops_asking() {
+        let approval = Arc::new(ScriptedApproval {
+            responses: Mutex::new(vec![ApprovalResponse::AllowAlways]),
+            asked: Mutex::new(Vec::new()),
+        });
+        // Two steps each issuing the same danger call; the first should ask,
+        // the second should be auto-allowed by the persisted rule.
+        let provider = ScriptedProvider::new(vec![
+            vec![
+                StreamChunk::ToolCall { call: danger_call() },
+                StreamChunk::Done { stop_reason: Some("tool_use".into()) },
+            ],
+            vec![
+                StreamChunk::ToolCall { call: danger_call() },
+                StreamChunk::Done { stop_reason: Some("tool_use".into()) },
+            ],
+            vec![StreamChunk::Done { stop_reason: Some("stop".into()) }],
+        ]);
+
+        let mut reg = ToolRegistry::new();
+        reg.register(Arc::new(DangerTool));
+        let engine = Arc::new(PermissionEngine::new(PermissionConfig::safe_defaults()));
+        let dispatcher = Dispatcher::new(
+            Arc::new(reg),
+            engine.clone(),
+            DispatchConfig::new(std::env::temp_dir()).with_approval(approval.clone()),
+        );
+
+        dispatcher
+            .run(provider, "scripted", "m", vec![Message { role: "user".into(), content: "go".into(), ..Default::default() }])
+            .await
+            .unwrap();
+
+        // Asked exactly once: the second identical call hit the learned rule.
+        assert_eq!(approval.asked.lock().len(), 1, "should ask only once");
+        assert_eq!(engine.check_explicit("danger", "danger"), Some(Action::Allow));
+    }
+
+    #[test]
+    fn bash_permission_denies_compound_with_dangerous_command() {
+        // Even if the permission engine defaults to Allow for bash, a rule
+        // matching "rm *" should deny any bash invocation containing `rm`.
+        let mut pcfg = PermissionConfig::permissive();
+        pcfg.rules.insert(
+            "bash".into(),
+            vec![Rule {
+                pattern: "rm *".into(),
+                action: Action::Deny,
+            }],
+        );
+        let eng = PermissionEngine::new(pcfg);
+        let dispatcher = Dispatcher::new(
+            Arc::new(ToolRegistry::new()),
+            Arc::new(eng),
+            DispatchConfig::new(std::env::temp_dir()),
+        );
+
+        // check_bash_permissions called with a compound command
+        // We test the internal logic by calling it via the public path
+        assert_eq!(
+            dispatcher.check_bash_permissions("git status && rm -rf /"),
+            Action::Deny,
+            "compound with rm should be denied"
+        );
+        assert_eq!(
+            dispatcher.check_bash_permissions("git status && echo hello"),
+            Action::Allow,
+            "compound without dangerous command should be allowed"
+        );
+        assert_eq!(
+            dispatcher.check_bash_permissions("rm file.txt"),
+            Action::Deny,
+            "single rm command should be denied"
+        );
     }
 }

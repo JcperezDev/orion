@@ -93,7 +93,7 @@ impl ToolContext {
         }
     }
 
-    pub fn with_approval(mut self, channel: Arc<dyn ApprovalChannel>) -> Self {
+    pub fn with_approval(self, channel: Arc<dyn ApprovalChannel>) -> Self {
         *self.approval.lock() = Some(channel);
         self
     }
@@ -129,6 +129,7 @@ pub trait Tool: Send + Sync {
     ) -> Result<ToolResult>;
 }
 
+#[derive(Clone)]
 pub struct ToolRegistry {
     tools: HashMap<String, Arc<dyn Tool>>,
 }
@@ -219,15 +220,54 @@ pub fn builtin_registry() -> ToolRegistry {
     reg.register(Arc::new(grep::GrepTool));
     reg.register(Arc::new(glob::GlobTool));
     reg.register(Arc::new(todowrite::TodowriteTool::default()));
+    reg.register(Arc::new(webfetch::WebFetchTool::new()));
+    reg.register(Arc::new(websearch::WebSearchTool::new(None, None)));
+    reg.register(Arc::new(question::QuestionTool));
+    reg.register(Arc::new(apply_patch::ApplyPatchTool::new(PathBuf::from("."))));
+    reg.register(Arc::new(lsp::LspTool::new()));
+    reg.register(Arc::new(pty::PtyTool::new()));
+
+    let mut skills_reg = crate::skills::SkillRegistry::new();
+    let _ = skills_reg.auto_discover();
+    reg.register(Arc::new(skill::SkillTool::new(skills_reg)));
+
     reg
 }
 
+/// Register a TaskTool into a ToolRegistry.
+/// TaskTool requires a provider — call this after the provider is selected.
+pub fn register_task_tool(
+    reg: &mut ToolRegistry,
+    provider: Arc<dyn crate::providers::traits::LlmProvider>,
+    provider_id: &str,
+    model: &str,
+    permissions: Arc<crate::permissions::PermissionEngine>,
+) {
+    let tool = task::TaskTool::new(
+        provider,
+        provider_id,
+        model,
+        Arc::new(reg.clone()),
+        permissions,
+    );
+    reg.register(Arc::new(tool));
+}
+
+pub mod apply_patch;
 pub mod bash;
+pub mod bash_parser;
+pub mod skill;
+pub mod task;
 pub mod edit;
 pub mod glob;
 pub mod grep;
+pub mod lsp;
+pub mod pty;
+pub mod question;
 pub mod read;
 pub mod todowrite;
+pub mod websearch;
+pub mod webfetch;
 pub mod write;
 
 #[cfg(test)]

@@ -1,3 +1,4 @@
+use crate::tools::bash_parser::parse_commands;
 use crate::tools::{ApprovalRequest, ApprovalResponse, PermissionKind, Tool, ToolContext, ToolResult};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
@@ -5,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::time::Duration;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 
 const MAX_OUTPUT_BYTES: usize = 100_000;
@@ -53,10 +54,16 @@ impl Tool for BashTool {
         PermissionKind::Bash
     }
     fn action_summary(&self, args: &serde_json::Value) -> String {
-        args.get("command")
+        let raw = args.get("command")
             .and_then(|v| v.as_str())
             .unwrap_or("?")
-            .to_string()
+            .to_string();
+        let parsed = parse_commands(&raw);
+        if parsed.len() <= 1 {
+            return raw;
+        }
+        let steps: Vec<&str> = parsed.iter().map(|c| c.full_text.as_str()).collect();
+        format!("[{}]", steps.join(" | "))
     }
 
     async fn execute(
@@ -67,11 +74,24 @@ impl Tool for BashTool {
         let args: BashArgs = serde_json::from_value(args)
             .context("invalid args for bash tool")?;
 
+        let parsed_cmds = parse_commands(&args.command);
+        let action_desc = if parsed_cmds.len() <= 1 {
+            args.command.clone()
+        } else {
+            let steps: Vec<&str> = parsed_cmds.iter().map(|c| c.full_text.as_str()).collect();
+            format!("[{}]", steps.join(" | "))
+        };
         let request = ApprovalRequest {
             tool_name: "bash".into(),
-            action: args.command.clone(),
+            action: action_desc,
             matched_pattern: None,
-            arguments: serde_json::to_value(&args).unwrap_or_default(),
+            arguments: serde_json::json!({
+                "command": args.command,
+                "parsed": parsed_cmds.iter().map(|c| serde_json::json!({
+                    "command": c.command,
+                    "args": c.args,
+                })).collect::<Vec<_>>(),
+            }),
         };
         let decision = ctx.ask(request).await;
         match decision {

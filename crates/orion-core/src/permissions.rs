@@ -1,3 +1,7 @@
+pub mod bash_risk;
+pub mod store;
+pub mod trust;
+
 use globset::{Glob, GlobMatcher};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -115,6 +119,22 @@ impl PermissionEngine {
 
         let cfg = self.config.read().unwrap();
         cfg.defaults.get(tool).copied().unwrap_or(Action::Ask)
+    }
+
+    /// Like [`check`](Self::check), but returns `Some(action)` ONLY when an
+    /// explicit rule matched. Returns `None` when there is no matching rule, so
+    /// callers (the Trust Engine) can apply risk heuristics instead of the
+    /// blanket per-tool default.
+    pub fn check_explicit(&self, tool: &str, action_desc: &str) -> Option<Action> {
+        let matchers = self.matchers.read().unwrap();
+        let rules = matchers.get(tool)?;
+        let mut last_match: Option<Action> = None;
+        for (glob, action) in rules {
+            if glob.is_match(action_desc) {
+                last_match = Some(*action);
+            }
+        }
+        last_match
     }
 
     pub fn add_rule(&self, tool: &str, pattern: &str, action: Action) -> Result<(), String> {

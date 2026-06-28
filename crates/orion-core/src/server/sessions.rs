@@ -1,6 +1,6 @@
 use crate::server::AppState;
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     Json,
 };
@@ -81,6 +81,51 @@ pub async fn delete(
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("{e}")))?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ForkQuery {
+    pub fork_seq: Option<i64>,
+    pub title: Option<String>,
+}
+
+pub async fn fork(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Query(params): Query<ForkQuery>,
+) -> Result<Json<Session>, (StatusCode, String)> {
+    let new_id = Uuid::new_v4().to_string();
+    state
+        .memory
+        .fork_session(&new_id, &id, params.fork_seq, params.title.as_deref())
+        .await
+        .map_err(|e| {
+            if e.to_string().contains("not found") {
+                (StatusCode::NOT_FOUND, e.to_string())
+            } else {
+                (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+            }
+        })?;
+
+    // Load the newly created session to return its metadata
+    let session = state.memory.get_session(&new_id).await.ok_or_else(|| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "fork created but failed to retrieve".into(),
+        )
+    })?;
+    let s = serde_json::from_value::<crate::memory::store::SessionRecord>(session)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("{e}")))?;
+    let count = s.messages.len();
+
+    Ok(Json(Session {
+        id: new_id,
+        title: s.title,
+        provider: s.provider,
+        model: s.model,
+        created_at: s.created_at,
+        message_count: count,
+    }))
 }
 
 #[derive(Debug, Deserialize)]

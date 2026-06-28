@@ -22,3 +22,5 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 dirs.workspace = true
 axum.workspace = true
+uuid.workspace = true
+chrono.workspace = true

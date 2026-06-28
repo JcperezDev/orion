@@ -76,6 +76,7 @@ export default function Sidebar({ onOpenSettings, workspaceName, workspacePath }
   const [showAll, setShowAll] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
 
   useEffect(() => {
     loadSessions()
@@ -119,8 +120,13 @@ export default function Sidebar({ onOpenSettings, workspaceName, workspacePath }
   }
 
   const ws = deriveWorkspace(workspacePath, workspaceName)
-  const visible = showAll ? sessions : sessions.slice(0, 8)
-  const hasMore = sessions.length > 8
+
+  const filtered = searchQuery
+    ? sessions.filter(s => s.title.toLowerCase().includes(searchQuery.toLowerCase()))
+    : sessions
+
+  const visible = showAll ? filtered : filtered.slice(0, 8)
+  const hasMore = filtered.length > 8
 
   return (
     <aside className="sidebar">
@@ -141,15 +147,27 @@ export default function Sidebar({ onOpenSettings, workspaceName, workspacePath }
 
       <div className="sessions-label">
         <span>SESSIONS</span>
-        <span className="sessions-count">{sessions.length}</span>
+        <span className="sessions-count">{filtered.length}</span>
+      </div>
+
+      <div className="sidebar-search">
+        <input
+          className="sidebar-search-input"
+          type="text"
+          placeholder="Buscar sesiones..."
+          value={searchQuery}
+          onChange={e => setSearchQuery(e.target.value)}
+        />
       </div>
 
       <div className="sessions-list">
         {loading && sessions.length === 0 && (
           <div className="session-empty">Loading…</div>
         )}
-        {!loading && sessions.length === 0 && (
-          <div className="session-empty">No sessions yet</div>
+        {!loading && filtered.length === 0 && (
+          <div className="session-empty">
+            {searchQuery ? 'Sin resultados' : 'No sessions yet'}
+          </div>
         )}
         {error && (
           <div className="session-empty" style={{ color: 'var(--red-text, #f87171)' }}>{error}</div>
@@ -165,9 +183,9 @@ export default function Sidebar({ onOpenSettings, workspaceName, workspacePath }
             <span className="session-title">{s.title}</span>
           </div>
         ))}
-        {!showAll && hasMore && (
+        {!showAll && hasMore && !searchQuery && (
           <button className="load-more" onClick={() => setShowAll(true)}>
-            Load more ({sessions.length - 8})
+            Load more ({filtered.length - 8})
           </button>
         )}
       </div>

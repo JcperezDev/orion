@@ -1,6 +1,6 @@
 pub mod agent;
-pub mod clipboard;
-pub mod commands;
+pub mod compactor;
 pub mod context;
 pub mod dispatch;
-pub mod memory;
+pub mod snapshot;
+pub mod spill;

@@ -46,6 +46,7 @@ export default function ChatView() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [totalTokens, setTotalTokens] = useState(0)
   const [contextWindow, setContextWindow] = useState<number>(0)
+  const [undoable, setUndoable] = useState<{ id: string; summary: string; paths: string[] } | null>(null)
 
   // Load active session on mount
   useEffect(() => {
@@ -86,11 +87,26 @@ export default function ChatView() {
       markStreamEnd()
     }).then(fn => { if (mounted) unlistens.push(fn); else fn() })
 
+    listen<{ tool_call_id: string; summary: string; paths: string[] }>('orion://undoable', e => {
+      setUndoable({ id: e.payload.tool_call_id, summary: e.payload.summary, paths: e.payload.paths })
+    }).then(fn => { if (mounted) unlistens.push(fn); else fn() })
+
     return () => {
       mounted = false
       unlistens.forEach(fn => fn())
     }
   }, [])
+
+  const handleUndo = useCallback(async () => {
+    if (!undoable) return
+    try {
+      await invoke<string[]>('undo_changes', { toolCallId: undoable.id })
+    } catch (err) {
+      console.error('undo failed:', err)
+    } finally {
+      setUndoable(null)
+    }
+  }, [undoable])
 
   async function refreshContextWindow() {
     try {
@@ -325,9 +341,19 @@ export default function ChatView() {
         </div>
       )}
       <MessageList messages={messages} />
+      {undoable && (
+        <div className="undo-bar">
+          <span className="undo-bar-text">
+            Edited <code>{undoable.paths.join(', ') || undoable.summary}</code>
+          </span>
+          <button className="undo-bar-btn" onClick={handleUndo}>Undo</button>
+          <button className="undo-bar-dismiss" onClick={() => setUndoable(null)} aria-label="Dismiss">✕</button>
+        </div>
+      )}
       <InputArea
         sessionId={activeSession?.id ?? ''}
         disabled={!activeSession}
+        isStreaming={messages.some(m => m.isStreaming)}
         onSubmit={handleSubmit}
         onUserMessage={pushMessage}
         onSendingChange={() => {}}

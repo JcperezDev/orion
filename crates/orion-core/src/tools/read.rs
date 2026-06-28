@@ -113,9 +113,7 @@ pub(crate) fn resolve_path(cwd: &Path, path: &str) -> std::path::PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
-
-    #[tokio::test]
+        #[tokio::test]
     async fn reads_existing_file() {
         let dir = tempdir_workaround();
         let f = dir.join("hello.txt");

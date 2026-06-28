@@ -16,16 +16,11 @@ pub enum InputEvent {
     Unknown,
 }
 
-pub struct EventLoop {
-    #[allow(dead_code)]
-    pub tick_rate: std::time::Duration,
-}
+pub struct EventLoop;
 
 impl EventLoop {
     pub fn new() -> Self {
-        Self {
-            tick_rate: std::time::Duration::from_millis(100),
-        }
+        Self
     }
 
     pub async fn next_event(&self) -> EventType {

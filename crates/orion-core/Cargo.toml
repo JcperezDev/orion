@@ -34,3 +34,9 @@ async-stream.workspace = true
 globset.workspace = true
 walkdir.workspace = true
 regex.workspace = true
+scraper.workspace = true
+url.workspace = true
+tree-sitter.workspace = true
+tree-sitter-bash.workspace = true
+dashmap = "6"
+tokio-util = { version = "0.7", features = ["rt"] }

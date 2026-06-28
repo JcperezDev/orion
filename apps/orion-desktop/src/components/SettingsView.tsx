@@ -1026,10 +1026,83 @@ function PermissionsSection() {
     { pattern: 'shell.run:git status', decision: 'allow' },
     { pattern: 'shell.run:rm -rf *', decision: 'deny' },
   ])
+  const [fullAccess, setFullAccess] = useState(false)
+  const [loadingFa, setLoadingFa] = useState(true)
+
+  useEffect(() => {
+    invoke<boolean>('get_full_access')
+      .then((v) => setFullAccess(v))
+      .catch(() => {})
+      .finally(() => setLoadingFa(false))
+  }, [])
+
+  const toggleFullAccess = async () => {
+    const next = !fullAccess
+    setFullAccess(next)
+    try {
+      await invoke('set_full_access', { enabled: next })
+    } catch {
+      setFullAccess(!next) // revert on failure
+    }
+  }
 
   return (
     <div>
       <SectionTitle>Permissions</SectionTitle>
+
+      {/* Master "full access" switch */}
+      <div
+        className="rounded-lg flex items-center justify-between"
+        style={{
+          background: fullAccess ? 'var(--red-bg)' : 'var(--bg-secondary)',
+          border: `0.5px solid ${fullAccess ? 'var(--red)' : 'var(--border-subtle)'}`,
+          padding: '14px 16px',
+          marginBottom: 16,
+        }}
+      >
+        <div style={{ marginRight: 16 }}>
+          <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>
+            Full access mode
+          </div>
+          <div style={{ fontSize: '11px', color: fullAccess ? 'var(--red-text)' : 'var(--text-secondary)', lineHeight: 1.5 }}>
+            {fullAccess
+              ? '⚠ Every tool runs with no prompts — rm, curl, and writes to /etc, /home, /tmp are all allowed.'
+              : 'Off: the Trust Engine auto-allows safe, reversible actions and only asks before risky ones.'}
+          </div>
+        </div>
+        <button
+          role="switch"
+          aria-checked={fullAccess}
+          aria-label="Toggle full access mode"
+          disabled={loadingFa}
+          onClick={toggleFullAccess}
+          style={{
+            flexShrink: 0,
+            width: 44,
+            height: 26,
+            borderRadius: 20,
+            border: 'none',
+            cursor: loadingFa ? 'default' : 'pointer',
+            background: fullAccess ? 'var(--red)' : 'var(--border-strong, #555)',
+            position: 'relative',
+            transition: 'background 0.15s ease',
+          }}
+        >
+          <span
+            style={{
+              position: 'absolute',
+              top: 3,
+              left: fullAccess ? 21 : 3,
+              width: 20,
+              height: 20,
+              borderRadius: '50%',
+              background: '#fff',
+              transition: 'left 0.15s ease',
+            }}
+          />
+        </button>
+      </div>
+
       <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: 12 }}>
         Tool calls matching these patterns are auto-approved or denied without prompting.
       </p>

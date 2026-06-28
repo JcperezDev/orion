@@ -365,6 +365,224 @@
   50%      { opacity: 0.4; }
 }
 
+/* ===== Command hints ===== */
+.command-hints {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  margin-bottom: 4px;
+  max-height: 260px;
+  overflow-y: auto;
+  border-radius: 8px;
+  border: 0.5px solid var(--border-mid, #2a2a38);
+  background: var(--bg-secondary, #111116);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  z-index: 50;
+}
+
+.command-hint-item {
+  padding: 7px 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  transition: background 0.1s;
+}
+
+.command-hint-item:hover {
+  background: var(--bg-tertiary, #18181f);
+}
+
+.command-hint-key {
+  color: var(--accent-text, #a09ef0);
+  font-family: 'JetBrains Mono', monospace;
+  min-width: 80px;
+}
+
+.command-hint-label {
+  color: var(--text-primary, #e2e0f0);
+  flex: 1;
+}
+
+.command-hint-desc {
+  color: var(--text-tertiary, #4a4866);
+  font-size: 10px;
+}
+
+/* ===== Stop button ===== */
+.stop-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  background: var(--red, #A32D2D);
+  color: white;
+  border: none;
+  cursor: pointer;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  transition: background 0.12s;
+  animation: stop-pulse 1.5s ease-in-out infinite;
+}
+
+.stop-btn:hover {
+  background: #c0392b;
+}
+
+@keyframes stop-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.75; }
+}
+
+/* ===== Mode pills ===== */
+.mode-pills {
+  display: flex;
+  gap: 2px;
+  background: var(--bg-primary, #0a0a0c);
+  border: 0.5px solid var(--border-mid, #2a2a38);
+  border-radius: 6px;
+  padding: 2px;
+}
+
+.mode-pill {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--text-tertiary, #4a4866);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  padding: 3px 10px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.mode-pill:hover:not(:disabled) {
+  color: var(--text-secondary, #8884a8);
+  background: var(--bg-tertiary, #18181f);
+}
+
+.mode-pill.active {
+  color: var(--accent-text, #a09ef0);
+  background: var(--accent-muted, #2d2a5e);
+}
+
+.mode-pill:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* ===== Welcome / Empty state ===== */
+.welcome-screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100%;
+  padding: 40px 20px;
+}
+
+.welcome-content {
+  max-width: 480px;
+  text-align: center;
+}
+
+.welcome-logo {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 48px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  color: var(--accent, #534AB7);
+  margin-bottom: 8px;
+}
+
+.welcome-subtitle {
+  font-size: 14px;
+  color: var(--text-tertiary, #4a4866);
+  margin-bottom: 32px;
+}
+
+.welcome-section-title {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-tertiary, #4a4866);
+  margin-bottom: 10px;
+  text-align: left;
+}
+
+.welcome-shortcuts {
+  margin-bottom: 24px;
+  text-align: left;
+}
+
+.shortcut-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 5px 0;
+  font-size: 12px;
+  color: var(--text-secondary, #8884a8);
+}
+
+.shortcut-keys {
+  min-width: 120px;
+  text-align: right;
+}
+
+.shortcut-keys kbd {
+  display: inline-block;
+  padding: 2px 6px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--text-secondary, #8884a8);
+  background: var(--bg-tertiary, #18181f);
+  border: 0.5px solid var(--border-mid, #2a2a38);
+  border-radius: 3px;
+  line-height: 1.4;
+}
+
+.welcome-modes {
+  text-align: left;
+}
+
+.mode-card-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mode-card {
+  background: var(--bg-secondary, #111116);
+  border: 0.5px solid var(--border-subtle, #1e1e28);
+  border-radius: 8px;
+  padding: 10px 14px;
+  text-align: left;
+  transition: border-color 0.12s;
+}
+
+.mode-card:hover {
+  border-color: var(--border-mid, #2a2a38);
+}
+
+.mode-card-title {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-text, #a09ef0);
+  margin-bottom: 2px;
+}
+
+.mode-card-desc {
+  font-size: 11px;
+  color: var(--text-tertiary, #4a4866);
+  line-height: 1.5;
+}
+
 /* ===== Input Area ===== */
 .input-area {
   border-top: 0.5px solid var(--border-subtle, #1e1e28);
@@ -445,27 +663,6 @@
   padding: 0 2px;
 }
 
-.mode-selector {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 11px;
-  color: var(--text-secondary, #8884a8);
-  background: transparent;
-  border: 0.5px solid var(--border-mid, #2a2a38);
-  border-radius: 6px;
-  padding: 3px 8px;
-  cursor: pointer;
-  outline: none;
-}
-
-.mode-selector:hover {
-  border-color: var(--accent, #534AB7);
-}
-
-.mode-selector option {
-  background: var(--bg-secondary, #111116);
-  color: var(--text-primary, #e2e0f0);
-}
-
 .add-context-btn {
   font-size: 11px;
   color: var(--text-secondary, #8884a8);
@@ -486,3 +683,48 @@
   font-size: 10px;
   color: var(--text-tertiary, #4a4866);
 }
+
+/* Undo bar — shown after a reversible (in-workspace) edit */
+.undo-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 16px 8px;
+  padding: 8px 12px;
+  background: var(--bg-secondary, #16151f);
+  border: 0.5px solid var(--border-subtle, #2a2838);
+  border-radius: 8px;
+  font-size: 12px;
+}
+.undo-bar-text {
+  color: var(--text-secondary, #9b98b3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.undo-bar-text code {
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--text-primary, #e8e6f0);
+}
+.undo-bar-btn {
+  margin-left: auto;
+  flex-shrink: 0;
+  padding: 4px 12px;
+  border: 0.5px solid var(--accent, #534AB7);
+  border-radius: 6px;
+  background: var(--accent, #534AB7);
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+}
+.undo-bar-btn:hover { filter: brightness(1.1); }
+.undo-bar-dismiss {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary, #4a4866);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 4px;
+}
+.undo-bar-dismiss:hover { color: var(--text-primary, #e8e6f0); }

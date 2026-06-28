@@ -1,13 +1,11 @@
 use crate::config::Config;
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct Message {
     pub role: String,
     pub content: String,
 }
 
-#[allow(dead_code)]
 pub struct Context {
     pub messages: Vec<Message>,
     pub current_model: String,
@@ -15,7 +13,6 @@ pub struct Context {
     pub config: Config,
 }
 
-#[allow(dead_code)]
 impl Context {
     pub fn new(config: Config) -> Self {
         Self {
