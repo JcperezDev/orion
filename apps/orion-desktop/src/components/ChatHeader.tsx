@@ -57,7 +57,8 @@ export default function ChatHeader({ sessionTitle, sessionId, onTitleChange, tot
       const providerList = await invoke<Array<{ id: string; name: string }>>('list_providers')
       const provider = providerList.find(p => p.id === providerId)
       const modelList = await invoke<ModelInfo[]>('list_models', { provider: providerId })
-      const m = modelList.find(x => `${x.provider}:${x.id}` === modelId)
+      // `x.id` is already the full `provider:model` id.
+      const m = modelList.find(x => x.id === modelId)
       setActive({
         provider_name: provider?.name ?? providerId ?? '',
         model_id: modelId,

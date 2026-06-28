@@ -171,7 +171,8 @@ export default function ChatView() {
       }
       const [providerId] = modelId.split(':')
       const models = await invoke<ModelInfo[]>('list_models', { provider: providerId })
-      const m = models.find(x => `${x.provider}:${x.id}` === modelId)
+      // `x.id` is already the full `provider:model` id.
+      const m = models.find(x => x.id === modelId)
       setContextWindow(m?.context_window ?? 0)
     } catch (e) {
       console.error('Failed to load context window:', e)
