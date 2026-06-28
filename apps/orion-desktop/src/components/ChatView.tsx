@@ -296,6 +296,7 @@ export default function ChatView() {
           '  /model       — open the model picker',
           '  /models      — open the model picker',
           '  /providers   — open the model picker (connect / switch)',
+          '  /goal <obj>  — work autonomously toward an objective (agent)',
           '  /sync        — sync models for the active provider',
         ].join('\n'))
         break
@@ -316,6 +317,37 @@ export default function ChatView() {
           pushSystem('✓ Models synced.')
         } catch (e) {
           pushError(`Sync failed: ${e}`)
+        }
+        break
+      }
+
+      // /goal <objective> — work autonomously toward an objective (agent mode).
+      case '/goal': {
+        if (!activeSession) break
+        const objective = cmd.replace(/^\/goal\s*/i, '').trim()
+        if (!objective) {
+          pushSystem('Usage: /goal <objective> — ORION works autonomously toward it, using tools, until it is done.')
+          break
+        }
+        const framed =
+          'GOAL — keep working autonomously until this objective is fully complete. ' +
+          'Plan the steps, use tools (read, write, edit, bash, grep, …), verify your work, ' +
+          'and only stop when the goal is genuinely achieved.\n\nObjective: ' + objective
+        setLimitInfo(null)
+        lastSubmitRef.current = { text: framed, mode: 'agent' }
+        const history = buildHistory()
+        pushMessage({ id: genId(), role: 'user', content: `🎯 Goal: ${objective}`, timestamp: nowIso() })
+        pushMessage({ id: genId(), role: 'assistant', content: '', timestamp: nowIso(), isStreaming: true })
+        try {
+          await invoke<string>('send_message', {
+            sessionId: activeSession.id,
+            content: framed,
+            mode: 'agent',
+            history,
+          })
+        } catch (e) {
+          pushError(String(e))
+          markStreamEnd()
         }
         break
       }

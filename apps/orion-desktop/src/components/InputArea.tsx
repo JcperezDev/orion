@@ -32,8 +32,9 @@ const MODES: { id: BuildMode; label: string; desc: string }[] = [
 const COMMANDS: { id: string; label: string; desc: string }[] = [
   { id: '/clear',     label: 'Clear chat',    desc: 'Delete all messages' },
   { id: '/help',      label: 'Help',          desc: 'Show available commands' },
-  { id: '/providers', label: 'Providers',     desc: 'List connected providers' },
-  { id: '/model',     label: 'Current model', desc: 'Show the model and available ones' },
+  { id: '/model',     label: 'Model',         desc: 'Open the model picker' },
+  { id: '/providers', label: 'Providers',     desc: 'Connect or switch providers' },
+  { id: '/goal',      label: 'Goal',          desc: 'Work autonomously toward an objective' },
   { id: '/sync',      label: 'Sync',          desc: 'Sync models for the active provider' },
 ]
 
