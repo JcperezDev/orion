@@ -1,0 +1,11 @@
+name: Self-hosted test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: [self-hosted, linux]
+    steps:
+      - run: echo "self-hosted runner executed a job (billing lock does NOT block self-hosted)"
+      - run: uname -a
