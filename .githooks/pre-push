@@ -1,0 +1,24 @@
+#!/bin/bash
+# Local CI substitute: validate the workspace before pushing.
+# Enable once with:  git config core.hooksPath .githooks
+# Skip a push with:   SKIP_HOOK=1 git push
+set -e
+
+if [ "${SKIP_HOOK:-}" = "1" ]; then
+  echo "pre-push: skipped (SKIP_HOOK=1)"
+  exit 0
+fi
+
+echo "pre-push: cargo build --workspace"
+cargo build --workspace --quiet
+
+echo "pre-push: cargo test --workspace"
+cargo test --workspace --quiet
+
+# Frontend typecheck (only if node deps are installed).
+if [ -d apps/orion-desktop/node_modules ]; then
+  echo "pre-push: tsc (desktop frontend)"
+  (cd apps/orion-desktop && npx tsc --noEmit)
+fi
+
+echo "pre-push: OK"

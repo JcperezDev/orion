@@ -40,4 +40,13 @@ tree-sitter.workspace = true
 tree-sitter-bash.workspace = true
 dashmap = "6"
 tokio-util = { version = "0.7", features = ["rt"] }
-keyring.workspace = true
+
+# API-key storage in the OS keyring — backend is platform-specific.
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", features = ["apple-native"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+keyring = { version = "3", features = ["windows-native"] }
