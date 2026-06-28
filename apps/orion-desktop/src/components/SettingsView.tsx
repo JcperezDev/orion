@@ -11,15 +11,12 @@ import {
   Loader2,
   ChevronRight,
   Plug,
-  Database,
   Bot,
-  Server,
   Shield,
   Globe,
   Keyboard,
   Settings as SettingsIcon,
 } from 'lucide-react'
-import MCPServerView from './MCPServerView'
 
 interface Provider {
   id: string
@@ -59,20 +56,94 @@ const PROVIDER_META: Record<string, { color: string; dashboard?: string }> = {
   custom: { color: '#888888' },
 }
 
-const THEMES: Array<{ id: string; name: string; bg: string; side: string; acc: string; txt: string; brd: string }> = [
+interface ThemeDef { id: string; name: string; bg: string; side: string; acc: string; txt: string; brd: string; light?: boolean }
+
+const THEMES: ThemeDef[] = [
+  // ---- Signature / popular dark ----
   { id: 'orion-dark', name: 'Orion Dark', bg: '#0a0a0c', side: '#111116', acc: '#534AB7', txt: '#e2e0f0', brd: '#1e1e28' },
-  { id: 'tokyonight', name: 'Tokyonight', bg: '#1a1b26', side: '#16161e', acc: '#7aa2f7', txt: '#c0caf5', brd: '#414868' },
-  { id: 'catppuccin', name: 'Catppuccin', bg: '#1e1e2e', side: '#181825', acc: '#cba6f7', txt: '#cdd6f4', brd: '#313244' },
+  { id: 'tokyonight', name: 'Tokyo Night', bg: '#1a1b26', side: '#16161e', acc: '#7aa2f7', txt: '#c0caf5', brd: '#414868' },
+  { id: 'tokyonight-storm', name: 'Tokyo Night Storm', bg: '#24283b', side: '#1f2335', acc: '#7aa2f7', txt: '#c0caf5', brd: '#414868' },
+  { id: 'catppuccin', name: 'Catppuccin Mocha', bg: '#1e1e2e', side: '#181825', acc: '#cba6f7', txt: '#cdd6f4', brd: '#313244' },
+  { id: 'catppuccin-macchiato', name: 'Catppuccin Macchiato', bg: '#24273a', side: '#1e2030', acc: '#c6a0f6', txt: '#cad3f5', brd: '#363a4f' },
+  { id: 'catppuccin-frappe', name: 'Catppuccin Frappé', bg: '#303446', side: '#292c3c', acc: '#ca9ee6', txt: '#c6d0f5', brd: '#414559' },
   { id: 'one-dark', name: 'One Dark', bg: '#282c34', side: '#21252b', acc: '#61afef', txt: '#abb2bf', brd: '#3e4451' },
   { id: 'dracula', name: 'Dracula', bg: '#282a36', side: '#21222c', acc: '#bd93f9', txt: '#f8f8f2', brd: '#44475a' },
   { id: 'nord', name: 'Nord', bg: '#2e3440', side: '#272c36', acc: '#88c0d0', txt: '#eceff4', brd: '#3b4252' },
   { id: 'gruvbox', name: 'Gruvbox', bg: '#282828', side: '#1d2021', acc: '#fabd2f', txt: '#ebdbb2', brd: '#3c3836' },
-  { id: 'rose-pine', name: 'Rose Pine', bg: '#191724', side: '#1f1d2e', acc: '#c4a7e7', txt: '#e0def4', brd: '#2a2739' },
+  { id: 'gruvbox-material', name: 'Gruvbox Material', bg: '#1d2021', side: '#282828', acc: '#d8a657', txt: '#d4be98', brd: '#3c3836' },
+  { id: 'rose-pine', name: 'Rosé Pine', bg: '#191724', side: '#1f1d2e', acc: '#c4a7e7', txt: '#e0def4', brd: '#2a2739' },
+  { id: 'rose-pine-moon', name: 'Rosé Pine Moon', bg: '#232136', side: '#2a273f', acc: '#c4a7e7', txt: '#e0def4', brd: '#393552' },
   { id: 'kanagawa', name: 'Kanagawa', bg: '#1f1f28', side: '#16161d', acc: '#7e9cd8', txt: '#dcd7ba', brd: '#2a2a37' },
   { id: 'everforest', name: 'Everforest', bg: '#2d353b', side: '#272e33', acc: '#a7c080', txt: '#d3c6aa', brd: '#3d484d' },
   { id: 'monokai', name: 'Monokai', bg: '#272822', side: '#1e1f1c', acc: '#f92672', txt: '#f8f8f2', brd: '#3e3d32' },
-  { id: 'synthwave', name: 'Synthwave', bg: '#262335', side: '#1d1927', acc: '#ff7edb', txt: '#ffffff', brd: '#3b3557' },
+  { id: 'monokai-pro', name: 'Monokai Pro', bg: '#2d2a2e', side: '#221f22', acc: '#ffd866', txt: '#fcfcfa', brd: '#403e41' },
+  { id: 'synthwave', name: 'Synthwave ’84', bg: '#262335', side: '#1d1927', acc: '#ff7edb', txt: '#ffffff', brd: '#3b3557' },
+  // ---- More dark ----
+  { id: 'solarized-dark', name: 'Solarized Dark', bg: '#002b36', side: '#073642', acc: '#268bd2', txt: '#93a1a1', brd: '#0a4250' },
+  { id: 'material-ocean', name: 'Material Ocean', bg: '#0f111a', side: '#0b0d14', acc: '#84ffff', txt: '#a6accd', brd: '#1f2233' },
+  { id: 'material-palenight', name: 'Material Palenight', bg: '#292d3e', side: '#232635', acc: '#c792ea', txt: '#a6accd', brd: '#3a3f58' },
+  { id: 'ayu-dark', name: 'Ayu Dark', bg: '#0b0e14', side: '#0d1017', acc: '#ffb454', txt: '#bfbdb6', brd: '#1b1f2b' },
+  { id: 'ayu-mirage', name: 'Ayu Mirage', bg: '#1f2430', side: '#191e2a', acc: '#ffcc66', txt: '#cbccc6', brd: '#2d3343' },
+  { id: 'night-owl', name: 'Night Owl', bg: '#011627', side: '#001122', acc: '#82aaff', txt: '#d6deeb', brd: '#1d3b53' },
+  { id: 'cobalt2', name: 'Cobalt2', bg: '#193549', side: '#15293a', acc: '#ffc600', txt: '#ffffff', brd: '#234d6b' },
+  { id: 'oceanic-next', name: 'Oceanic Next', bg: '#1b2b34', side: '#16242b', acc: '#6699cc', txt: '#cdd3de', brd: '#2b3b44' },
+  { id: 'horizon', name: 'Horizon', bg: '#1c1e26', side: '#16181e', acc: '#e95678', txt: '#d5d8da', brd: '#2e303e' },
+  { id: 'nightfox', name: 'Nightfox', bg: '#192330', side: '#131a24', acc: '#719cd6', txt: '#cdcecf', brd: '#29394f' },
+  { id: 'carbonfox', name: 'Carbonfox', bg: '#161616', side: '#0c0c0c', acc: '#78a9ff', txt: '#f2f4f8', brd: '#2a2a2a' },
+  { id: 'oxocarbon', name: 'Oxocarbon', bg: '#161616', side: '#0c0c0c', acc: '#ee5396', txt: '#f2f4f8', brd: '#262626' },
+  { id: 'github-dark', name: 'GitHub Dark', bg: '#0d1117', side: '#010409', acc: '#58a6ff', txt: '#c9d1d9', brd: '#21262d' },
+  { id: 'vesper', name: 'Vesper', bg: '#101010', side: '#0a0a0a', acc: '#ffc799', txt: '#ffffff', brd: '#232323' },
+  { id: 'poimandres', name: 'Poimandres', bg: '#1b1e28', side: '#171922', acc: '#5de4c7', txt: '#e4f0fb', brd: '#2a2e3d' },
+  { id: 'tomorrow-night', name: 'Tomorrow Night', bg: '#1d1f21', side: '#161719', acc: '#81a2be', txt: '#c5c8c6', brd: '#373b41' },
+  { id: 'panda', name: 'Panda', bg: '#292a2b', side: '#1f2021', acc: '#ff75b5', txt: '#e6e6e6', brd: '#3a3b3c' },
+  { id: 'aura', name: 'Aura', bg: '#21202e', side: '#1c1b25', acc: '#a277ff', txt: '#edecee', brd: '#2d2b3a' },
+  { id: 'moonfly', name: 'Moonfly', bg: '#080808', side: '#0c0c0c', acc: '#80a0ff', txt: '#bdbdbd', brd: '#303030' },
+  { id: 'zenburn', name: 'Zenburn', bg: '#3f3f3f', side: '#383838', acc: '#dca3a3', txt: '#dcdccc', brd: '#4f4f4f' },
+  { id: 'espresso', name: 'Espresso', bg: '#2a211c', side: '#231a15', acc: '#d8b48b', txt: '#e6d9c8', brd: '#3d3128' },
+  { id: 'tokyo-night-moon', name: 'Tokyo Night Moon', bg: '#222436', side: '#1e2030', acc: '#82aaff', txt: '#c8d3f5', brd: '#3b4261' },
+  { id: 'noctis', name: 'Noctis', bg: '#052529', side: '#04181c', acc: '#49d6e0', txt: '#c5cdd3', brd: '#0c3a40' },
+  // ---- Light ----
+  { id: 'orion-light', name: 'Orion Light', bg: '#ffffff', side: '#f4f4f7', acc: '#534AB7', txt: '#1a1a2e', brd: '#e2e2ea', light: true },
+  { id: 'github-light', name: 'GitHub Light', bg: '#ffffff', side: '#f6f8fa', acc: '#0969da', txt: '#24292f', brd: '#d0d7de', light: true },
+  { id: 'solarized-light', name: 'Solarized Light', bg: '#fdf6e3', side: '#eee8d5', acc: '#268bd2', txt: '#586e75', brd: '#ddd6c1', light: true },
+  { id: 'catppuccin-latte', name: 'Catppuccin Latte', bg: '#eff1f5', side: '#e6e9ef', acc: '#8839ef', txt: '#4c4f69', brd: '#ccd0da', light: true },
+  { id: 'rose-pine-dawn', name: 'Rosé Pine Dawn', bg: '#faf4ed', side: '#fffaf3', acc: '#907aa9', txt: '#575279', brd: '#dfdad9', light: true },
+  { id: 'one-light', name: 'One Light', bg: '#fafafa', side: '#eaeaeb', acc: '#4078f2', txt: '#383a42', brd: '#dbdbdc', light: true },
+  { id: 'ayu-light', name: 'Ayu Light', bg: '#fcfcfc', side: '#f3f4f5', acc: '#fa8d3e', txt: '#5c6166', brd: '#e7e8e9', light: true },
+  { id: 'gruvbox-light', name: 'Gruvbox Light', bg: '#fbf1c7', side: '#f2e5bc', acc: '#b57614', txt: '#3c3836', brd: '#e3d8ac', light: true },
 ]
+
+// --- Theme application with derived variables (so light themes read well too) ---
+function hexToRgb(h: string): [number, number, number] {
+  const s = h.replace('#', '')
+  const n = parseInt(s.length === 3 ? s.split('').map(c => c + c).join('') : s, 16)
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255]
+}
+function rgbToHex(r: number, g: number, b: number): string {
+  const c = (x: number) => Math.max(0, Math.min(255, Math.round(x))).toString(16).padStart(2, '0')
+  return `#${c(r)}${c(g)}${c(b)}`
+}
+function mix(a: string, b: string, t: number): string {
+  const [r1, g1, b1] = hexToRgb(a)
+  const [r2, g2, b2] = hexToRgb(b)
+  return rgbToHex(r1 + (r2 - r1) * t, g1 + (g2 - g1) * t, b1 + (b2 - b1) * t)
+}
+function applyTheme(t: ThemeDef) {
+  const root = document.documentElement
+  const set = (k: string, v: string) => root.style.setProperty(k, v)
+  set('--bg-primary', t.bg)
+  set('--bg-secondary', t.side)
+  set('--bg-tertiary', mix(t.side, t.txt, 0.06))
+  set('--text-primary', t.txt)
+  set('--text-secondary', mix(t.txt, t.bg, 0.32))
+  set('--text-tertiary', mix(t.txt, t.bg, 0.55))
+  set('--border-subtle', t.brd)
+  set('--border-mid', mix(t.brd, t.txt, 0.22))
+  set('--border-strong', mix(t.brd, t.txt, 0.42))
+  set('--accent', t.acc)
+  set('--accent-text', t.light ? mix(t.acc, '#000000', 0.1) : t.acc)
+  set('--accent-muted', mix(t.acc, t.bg, 0.82))
+}
 
 type Section =
   | 'general'
@@ -80,11 +151,8 @@ type Section =
   | 'language'
   | 'appearance'
   | 'shortcuts'
-  | 'memory'
   | 'agents'
-  | 'mcp'
   | 'models'
-  | 'servers'
   | 'permissions'
 
 type SectionGroup = 'GENERAL' | 'INTERFACE' | 'TOOLS' | 'SYSTEM'
@@ -100,7 +168,7 @@ export default function SettingsView({ onClose }: { onClose?: () => void }) {
   const [activeSection, setActiveSection] = useState<Section>(() => {
     if (typeof window === 'undefined') return 'providers'
     const m = window.location.hash.match(/^#settings\/([a-z]+)/)
-    if (m && ['general','providers','language','appearance','shortcuts','memory','agents','mcp','models','servers','permissions'].includes(m[1])) {
+    if (m && ['general','providers','language','appearance','shortcuts','agents','models','permissions'].includes(m[1])) {
       return m[1] as Section
     }
     return 'providers'
@@ -124,13 +192,7 @@ export default function SettingsView({ onClose }: { onClose?: () => void }) {
     document.documentElement.setAttribute('data-theme', theme)
     localStorage.setItem('orion-theme', theme)
     const t = THEMES.find(x => x.id === theme)
-    if (t) {
-      document.documentElement.style.setProperty('--bg-primary', t.bg)
-      document.documentElement.style.setProperty('--bg-secondary', t.side)
-      document.documentElement.style.setProperty('--accent', t.acc)
-      document.documentElement.style.setProperty('--text-primary', t.txt)
-      document.documentElement.style.setProperty('--border-subtle', t.brd)
-    }
+    if (t) applyTheme(t)
   }, [theme])
 
   async function loadAll() {
@@ -201,11 +263,8 @@ export default function SettingsView({ onClose }: { onClose?: () => void }) {
     { id: 'language',    label: 'Language',    icon: Globe,        group: 'GENERAL' },
     { id: 'appearance',  label: 'Appearance',  icon: Palette,      group: 'INTERFACE' },
     { id: 'shortcuts',   label: 'Shortcuts',   icon: Keyboard,     group: 'INTERFACE' },
-    { id: 'memory',      label: 'Memory',      icon: Database,     group: 'TOOLS' },
-    { id: 'agents',      label: 'Agents',      icon: Bot,          group: 'TOOLS' },
-    { id: 'mcp',         label: 'MCP Hub',     icon: Plug,         group: 'TOOLS' },
     { id: 'models',      label: 'Models',      icon: Cpu,          group: 'TOOLS' },
-    { id: 'servers',     label: 'Servers',     icon: Server,       group: 'SYSTEM' },
+    { id: 'agents',      label: 'Agents',      icon: Bot,          group: 'TOOLS' },
     { id: 'permissions', label: 'Permissions', icon: Shield,       group: 'SYSTEM' },
   ]
 
@@ -338,9 +397,7 @@ export default function SettingsView({ onClose }: { onClose?: () => void }) {
           <AppearanceSection theme={theme} onThemeChange={setTheme} />
         )}
         {activeSection === 'shortcuts' && <ShortcutsSection />}
-        {activeSection === 'memory' && <MemorySection />}
         {activeSection === 'agents' && <AgentsSection />}
-        {activeSection === 'mcp' && <MCPServerView />}
         {activeSection === 'models' && (
           <ModelsSection
             models={models}
@@ -348,10 +405,8 @@ export default function SettingsView({ onClose }: { onClose?: () => void }) {
             onSetDefault={handleSetDefault}
             onSync={handleSync}
             syncing={syncing}
-            providers={providers}
           />
         )}
-        {activeSection === 'servers' && <ServersSection />}
         {activeSection === 'permissions' && <PermissionsSection />}
       </div>
     </div>
@@ -615,50 +670,44 @@ function ModelsSection(props: {
   onSetDefault: (id: string) => void
   onSync: (id: string) => void
   syncing: string | null
-  providers: Provider[]
 }) {
-  const { models, defaultModel, onSetDefault, onSync, syncing, providers } = props
+  const { models, defaultModel, onSetDefault, onSync, syncing } = props
   const [filter, setFilter] = useState('')
   const filtered = models.filter(m =>
     m.name.toLowerCase().includes(filter.toLowerCase()) ||
     m.provider.toLowerCase().includes(filter.toLowerCase())
   )
 
-  const providersWithModels = providers.filter(p => p.models_count > 0 || p.has_api_key || p.id === 'ollama')
+  const syncingAny = syncing !== null
 
   return (
     <div>
       <SectionTitle>Models</SectionTitle>
-      <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '20px' }}>
-        Choose your default model. {models.length} models available.
-      </p>
-
-      {providersWithModels.length > 0 && (
-        <div className="mb-4 flex flex-wrap gap-2">
-          {providersWithModels.map(p => (
-            <button
-              key={p.id}
-              onClick={() => onSync(p.id)}
-              disabled={syncing === p.id}
-              className="rounded"
-              style={{
-                background: 'var(--bg-tertiary)',
-                border: '0.5px solid var(--border-subtle)',
-                color: 'var(--text-secondary)',
-                padding: '4px 10px',
-                fontSize: '11px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-              }}
-            >
-              {syncing === p.id ? <Loader2 className="size-3 animate-spin" /> : <RefreshCw className="size-3" />}
-              Sync {p.name}
-            </button>
-          ))}
-        </div>
-      )}
+      <div className="flex items-center justify-between" style={{ marginBottom: 16, gap: 12 }}>
+        <p style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+          Choose your default model · {models.length} available
+        </p>
+        <button
+          onClick={() => onSync('openrouter')}
+          disabled={syncingAny}
+          className="rounded"
+          style={{
+            flexShrink: 0,
+            background: 'var(--bg-tertiary)',
+            border: '0.5px solid var(--border-subtle)',
+            color: 'var(--text-secondary)',
+            padding: '5px 12px',
+            fontSize: '11px',
+            cursor: syncingAny ? 'default' : 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+          }}
+        >
+          {syncingAny ? <Loader2 className="size-3 animate-spin" /> : <RefreshCw className="size-3" />}
+          Sync models
+        </button>
+      </div>
 
       <input
         type="text"
@@ -972,25 +1021,10 @@ function ShortcutsSection() {
   )
 }
 
-function MemorySection() {
-  return (
-    <PlaceholderSection
-      title="Memory"
-      description="Persistent memory store. Memories survive across sessions and are auto-injected into relevant conversations."
-      bullets={[
-        'Storage: ~/.config/orion/memory.db (SQLite)',
-        'Auto-recall: enabled',
-        'Token budget: 2000 per turn',
-      ]}
-    />
-  )
-}
-
 interface AgentSpecView {
   id: string
   name: string
   mode: string
-  model: string
   description: string
   allowed_tools: string[]
   denied_tools: string[]
@@ -999,61 +1033,38 @@ interface AgentSpecView {
 
 function AgentsSection() {
   const [agents, setAgents] = useState<AgentSpecView[]>([])
-  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    invoke<AgentSpecView[]>('list_agents')
-      .then(setAgents)
-      .catch(() => {})
-      .finally(() => setLoading(false))
+    invoke<AgentSpecView[]>('list_agents').then(setAgents).catch(() => {})
   }, [])
+
+  const capability = (a: AgentSpecView) =>
+    ['write', 'edit', 'apply_patch', 'bash'].some(t => a.denied_tools.includes(t)) ? 'Read-only' : 'Read-write'
 
   return (
     <div>
       <SectionTitle>Agents</SectionTitle>
       <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: 14, lineHeight: 1.6 }}>
-        Built-in agents, each with its own role, system prompt and toolset. In the chat, switch the
-        primary agent with the <strong>Build / Plan / Agent</strong> buttons; subagents are invoked
-        automatically via the Task tool.
+        Switch the primary agent with the <strong>Build / Plan / Agent</strong> buttons in the chat.
+        Subagents run automatically when a task needs them.
       </p>
-      {loading && <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>Loading…</div>}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {agents.map(a => (
-          <div key={a.id} className="rounded-lg" style={{ background: 'var(--bg-secondary)', border: '0.5px solid var(--border-subtle)', padding: '13px 15px' }}>
-            <div className="flex items-center" style={{ gap: 8, marginBottom: 5 }}>
-              <span style={{ width: 8, height: 8, borderRadius: '50%', background: a.color || 'var(--accent)', flexShrink: 0 }} />
-              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{a.name}</span>
-              <span style={{ fontSize: 10, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-tertiary)', border: '0.5px solid var(--border-subtle)', borderRadius: 4, padding: '1px 6px' }}>{a.mode}</span>
-              <span style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: "'JetBrains Mono', monospace", marginLeft: 'auto' }}>{a.id}</span>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {agents.map(a => {
+          const ro = capability(a) === 'Read-only'
+          return (
+            <div key={a.id} className="rounded-lg" style={{ background: 'var(--bg-secondary)', border: '0.5px solid var(--border-subtle)', padding: '12px 14px' }}>
+              <div className="flex items-center" style={{ gap: 8, marginBottom: 4 }}>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: a.color || 'var(--accent)', flexShrink: 0 }} />
+                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{a.name}</span>
+                <span style={{ fontSize: 10, letterSpacing: '0.05em', textTransform: 'uppercase', color: ro ? 'var(--text-secondary)' : 'var(--green-text)', background: ro ? 'var(--bg-tertiary)' : 'var(--green-bg)', border: `0.5px solid ${ro ? 'var(--border-subtle)' : 'var(--green)'}`, borderRadius: 5, padding: '1px 7px' }}>{capability(a)}</span>
+                <span style={{ fontSize: 10, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-tertiary)', marginLeft: 'auto' }}>{a.mode}</span>
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>{a.description}</div>
             </div>
-            <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: 8 }}>{a.description}</div>
-            <div className="flex" style={{ gap: 6, flexWrap: 'wrap' }}>
-              {a.denied_tools.length > 0
-                ? a.denied_tools.map(t => (
-                    <span key={t} style={{ fontSize: 10, fontFamily: "'JetBrains Mono', monospace", color: 'var(--red-text)', background: 'var(--red-bg)', border: '0.5px solid var(--red)', borderRadius: 5, padding: '1px 6px' }}>no {t}</span>
-                  ))
-                : (a.allowed_tools.length > 0 ? a.allowed_tools : ['all tools']).map(t => (
-                    <span key={t} style={{ fontSize: 10, fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-secondary)', background: 'var(--bg-tertiary)', border: '0.5px solid var(--border-subtle)', borderRadius: 5, padding: '1px 6px' }}>{t}</span>
-                  ))}
-            </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
     </div>
-  )
-}
-
-function ServersSection() {
-  return (
-    <PlaceholderSection
-      title="Servers"
-      description="Backend HTTP server (orion-server on port 7337) for external integrations."
-      bullets={[
-        'HTTP server: bundled (orion-server binary)',
-        'Default port: 7337',
-        'Status: managed by the desktop app',
-      ]}
-    />
   )
 }
 
@@ -1246,43 +1257,3 @@ function PermissionsSection() {
   )
 }
 
-function PlaceholderSection({
-  title,
-  description,
-  bullets,
-}: {
-  title: string
-  description: string
-  bullets: string[]
-}) {
-  return (
-    <div>
-      <SectionTitle>{title}</SectionTitle>
-      <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: 12, lineHeight: 1.6 }}>
-        {description}
-      </p>
-      <div
-        className="rounded-lg"
-        style={{ background: 'var(--bg-secondary)', border: '0.5px solid var(--border-subtle)', padding: '14px 18px' }}
-      >
-        {bullets.map((b, i) => (
-          <div
-            key={i}
-            style={{
-              fontSize: '12px',
-              color: 'var(--text-secondary)',
-              padding: '6px 0',
-              borderBottom: i < bullets.length - 1 ? '0.5px solid var(--border-subtle)' : 'none',
-              fontFamily: "'JetBrains Mono', monospace",
-            }}
-          >
-            {b}
-          </div>
-        ))}
-      </div>
-      <p className="mt-3" style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>
-        UI shell ready · backend wiring pending.
-      </p>
-    </div>
-  )
-}
