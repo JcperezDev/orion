@@ -204,6 +204,7 @@ impl ModelCatalog {
 
         catalog.run_migrations()?;
         catalog.init_default_providers()?;
+        catalog.seed_default_models()?;
         catalog.init_default_sources()?;
         Ok(catalog)
     }
@@ -483,6 +484,41 @@ impl ModelCatalog {
             )?;
         }
 
+        Ok(())
+    }
+
+    /// Seed one sensible default model per built-in provider so a freshly
+    /// connected provider is immediately usable (the model menu is never empty
+    /// and `send_message` can auto-select). OpenRouter/Ollama are skipped — they
+    /// populate via sync / local discovery. Idempotent (INSERT OR IGNORE).
+    fn seed_default_models(&self) -> Result<()> {
+        // (provider_id, model_id, display_name, context_window)
+        let defaults: &[(&str, &str, &str, i64)] = &[
+            ("minimax", "MiniMax-Text-01", "MiniMax Text 01", 1_000_000),
+            ("openai", "gpt-4o-mini", "GPT-4o mini", 128_000),
+            ("anthropic", "claude-3-5-sonnet-20241022", "Claude 3.5 Sonnet", 200_000),
+            ("deepseek", "deepseek-chat", "DeepSeek Chat", 64_000),
+            ("google", "gemini-2.0-flash", "Gemini 2.0 Flash", 1_000_000),
+            ("groq", "llama-3.3-70b-versatile", "Llama 3.3 70B", 128_000),
+            ("mistral", "mistral-large-latest", "Mistral Large", 128_000),
+            ("together", "meta-llama/Llama-3.3-70B-Instruct-Turbo", "Llama 3.3 70B Turbo", 128_000),
+            ("perplexity", "sonar", "Sonar", 128_000),
+            ("qwen", "qwen-plus", "Qwen Plus", 131_000),
+            ("kimi", "moonshot-v1-32k", "Kimi (Moonshot v1 32k)", 32_000),
+            ("ernie", "ernie-4.0-8k", "ERNIE 4.0", 8_000),
+            ("hunyuan", "hunyuan-pro", "Hunyuan Pro", 32_000),
+        ];
+
+        let conn = self.conn.lock();
+        for (provider_id, model_id, display_name, ctx) in defaults {
+            let full_id = format!("{}:{}", provider_id, model_id);
+            conn.execute(
+                "INSERT OR IGNORE INTO models \
+                 (id, provider_id, model_id, display_name, context_window, supports_tools, enabled, is_available) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, 1, 1, 1)",
+                params![full_id, provider_id, model_id, display_name, ctx],
+            )?;
+        }
         Ok(())
     }
 

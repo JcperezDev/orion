@@ -446,6 +446,40 @@ async fn chat(
         .map_err(|e| e.to_string())
 }
 
+/// Emit a provider error to the frontend, routing rate/usage limits to the
+/// friendly "limit reached" banner (with resume) instead of a raw error.
+fn emit_provider_error(app_handle: &AppHandle, msg: &str) {
+    use orion_core::core::ratelimit::{classify_error, ErrorClass};
+    match classify_error(msg) {
+        ErrorClass::RateLimited { retry_after } => {
+            let _ = app_handle.emit(
+                "orion://limit_reached",
+                serde_json::json!({ "retry_after_secs": retry_after, "message": clean_provider_message(msg) }),
+            );
+            let _ = app_handle.emit("orion://done", ());
+        }
+        _ => {
+            let _ = app_handle.emit("orion://error", clean_provider_message(msg));
+        }
+    }
+}
+
+/// Pull the human-readable `"message":"..."` out of a provider JSON error body,
+/// falling back to a truncated raw string.
+fn clean_provider_message(msg: &str) -> String {
+    const NEEDLE: &str = "\"message\":\"";
+    if let Some(idx) = msg.find(NEEDLE) {
+        let rest = &msg[idx + NEEDLE.len()..];
+        if let Some(end) = rest.find('"') {
+            let extracted = rest[..end].trim();
+            if !extracted.is_empty() {
+                return extracted.to_string();
+            }
+        }
+    }
+    msg.chars().take(200).collect()
+}
+
 #[tauri::command]
 async fn send_message(
     app_handle: AppHandle,
@@ -460,11 +494,45 @@ async fn send_message(
     let agent_mode = resolved_mode == "agent";
     let plan_mode = resolved_mode == "plan";
 
-    // Resolve active model (provider:model format).
-    let active = state
-        .catalog
-        .get_default_model()
-        .ok_or_else(|| "No active model. Connect a provider first.".to_string())?;
+    // Resolve active model (provider:model format). If none is selected yet,
+    // auto-pick a model from a connected provider so the user can just chat.
+    let active = match state.catalog.get_default_model() {
+        Some(m) => m,
+        None => {
+            let connected: std::collections::HashSet<String> = state
+                .catalog
+                .list_providers()
+                .into_iter()
+                .filter(|p| {
+                    p.id == "ollama"
+                        || state.catalog.get_api_key(&p.id).is_some()
+                        || p.api_key_env
+                            .as_ref()
+                            .and_then(|k| std::env::var(k).ok())
+                            .is_some()
+                })
+                .map(|p| p.id)
+                .collect();
+            let mut candidates: Vec<_> = state
+                .catalog
+                .list_models(None)
+                .into_iter()
+                .filter(|m| connected.contains(&m.provider_id) && m.is_available)
+                .collect();
+            // Prefer tool-capable models (needed for agent mode).
+            candidates.sort_by_key(|m| !m.supports_tools);
+            match candidates.into_iter().next() {
+                Some(m) => {
+                    let _ = state.catalog.set_default_model(&m.full_id());
+                    let _ = app_handle.emit("orion://model_changed", m.full_id());
+                    m
+                }
+                None => {
+                    return Err("No connected provider has a usable model. Open Settings → Providers to connect one.".to_string());
+                }
+            }
+        }
+    };
     let provider_id = active.provider_id.clone();
     let model_id = active.model_id.clone();
 
@@ -485,11 +553,19 @@ async fn send_message(
             ..Default::default()
         }];
 
-        let mut stream = state
+        let mut stream = match state
             .registry
             .stream_chat_async(&provider_id, &model_id, msgs)
             .await
-            .map_err(|e| e.to_string())?;
+        {
+            Ok(s) => s,
+            Err(e) => {
+                // Surfaced via an event (error/limit banner); return Ok so the
+                // frontend doesn't also report the invoke rejection.
+                emit_provider_error(&app_handle, &e.to_string());
+                return Ok(String::new());
+            }
+        };
 
         let mut full_response = String::new();
         while let Some(chunk) = stream.next().await {
@@ -504,13 +580,23 @@ async fn send_message(
                     let _ = app_handle.emit("orion://token", &token);
                 }
                 Err(e) => {
-                    let msg = e.to_string();
-                    let _ = app_handle.emit("orion://error", &msg);
-                    return Err(msg);
+                    emit_provider_error(&app_handle, &e.to_string());
+                    return Ok(full_response);
                 }
             }
         }
 
+        // Guard against a silent empty response (provider returned 200 but no
+        // content) so the user always gets feedback.
+        if full_response.trim().is_empty() {
+            let _ = app_handle.emit(
+                "orion://error",
+                &format!(
+                    "The model ({}:{}) returned an empty response. Try another model from the menu in the top bar.",
+                    provider_id, model_id
+                ),
+            );
+        }
         let _ = app_handle.emit("orion://done", ());
         let _ = state.catalog.touch_session(&session_id);
 
@@ -901,6 +987,17 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .setup(|app| {
+            // Ensure the window/taskbar icon is the ORION logo at runtime (in
+            // dev the WM icon isn't always applied from the bundle config).
+            use tauri::Manager;
+            if let (Some(win), Some(icon)) =
+                (app.get_webview_window("main"), app.default_window_icon().cloned())
+            {
+                let _ = win.set_icon(icon);
+            }
+            Ok(())
+        })
         .manage(state)
         .invoke_handler(tauri::generate_handler![
             health,

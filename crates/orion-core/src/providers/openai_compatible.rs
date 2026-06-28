@@ -75,6 +75,19 @@ impl LlmProvider for OpenAICompatibleProvider {
             .send()
             .await?;
 
+        // Surface HTTP errors instead of silently streaming an error body that
+        // yields no tokens (e.g. a wrong model id or endpoint).
+        let status = res.status();
+        if !status.is_success() {
+            let body = res.text().await.unwrap_or_default();
+            let snippet: String = body.chars().take(600).collect();
+            return Err(anyhow::anyhow!(
+                "provider returned HTTP {}: {}",
+                status.as_u16(),
+                snippet.trim()
+            ));
+        }
+
         let (tx, rx) = mpsc::unbounded_channel::<Result<String>>();
         let mut stream = res.bytes_stream();
         let mut buffer = String::new();
@@ -158,6 +171,17 @@ impl LlmProvider for OpenAICompatibleProvider {
             .json(&body)
             .send()
             .await?;
+
+        let status = res.status();
+        if !status.is_success() {
+            let body = res.text().await.unwrap_or_default();
+            let snippet: String = body.chars().take(600).collect();
+            return Err(anyhow::anyhow!(
+                "provider returned HTTP {}: {}",
+                status.as_u16(),
+                snippet.trim()
+            ));
+        }
 
         let (tx, rx) = mpsc::unbounded_channel::<Result<StreamChunk>>();
         let mut stream = res.bytes_stream();

@@ -96,7 +96,7 @@ interface SectionDef {
   group: SectionGroup
 }
 
-export default function SettingsView() {
+export default function SettingsView({ onClose }: { onClose?: () => void }) {
   const [activeSection, setActiveSection] = useState<Section>(() => {
     if (typeof window === 'undefined') return 'providers'
     const m = window.location.hash.match(/^#settings\/([a-z]+)/)
@@ -227,6 +227,29 @@ export default function SettingsView() {
         className="w-[210px] flex-shrink-0 border-r p-3 overflow-y-auto"
         style={{ borderColor: 'var(--border-subtle)' }}
       >
+        <button
+          onClick={() => onClose?.()}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            width: '100%',
+            padding: '7px 10px',
+            marginBottom: 10,
+            border: '0.5px solid var(--border-subtle)',
+            borderRadius: 6,
+            background: 'transparent',
+            color: 'var(--text-secondary)',
+            fontSize: '12px',
+            cursor: 'pointer',
+          }}
+          onMouseEnter={e => { (e.currentTarget.style.background = 'var(--bg-tertiary)'); (e.currentTarget.style.color = 'var(--text-primary)') }}
+          onMouseLeave={e => { (e.currentTarget.style.background = 'transparent'); (e.currentTarget.style.color = 'var(--text-secondary)') }}
+          title="Back to chat (Esc)"
+        >
+          <span style={{ fontSize: 14, lineHeight: 1 }}>←</span>
+          <span>Back to chat</span>
+        </button>
         <div
           className="px-2 mb-3"
           style={{
@@ -887,7 +910,7 @@ function GeneralSection() {
 }
 
 function LanguageSection() {
-  const [lang, setLang] = useState(() => localStorage.getItem('orion-lang') ?? 'es')
+  const [lang, setLang] = useState(() => localStorage.getItem('orion-lang') ?? 'en')
   useEffect(() => {
     localStorage.setItem('orion-lang', lang)
   }, [lang])
@@ -900,8 +923,8 @@ function LanguageSection() {
         style={{ background: 'var(--bg-secondary)', border: '0.5px solid var(--border-subtle)', padding: '4px 8px' }}
       >
         {[
-          { id: 'es', label: 'Español', hint: 'default' },
-          { id: 'en', label: 'English' },
+          { id: 'en', label: 'English', hint: 'default' },
+          { id: 'es', label: 'Español' },
           { id: 'pt', label: 'Português' },
           { id: 'zh', label: '中文' },
         ].map(l => (

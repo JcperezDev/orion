@@ -13,15 +13,15 @@ interface ProviderDef {
 }
 
 const PROVIDERS: ProviderDef[] = [
-  { id: 'openrouter',  name: 'OpenRouter',  dot: '#534AB7', desc: 'Acceso a 100+ modelos',            recommended: true,  needsKey: true,  keyUrl: 'https://openrouter.ai/keys' },
+  { id: 'openrouter',  name: 'OpenRouter',  dot: '#534AB7', desc: 'Access to 100+ models',            recommended: true,  needsKey: true,  keyUrl: 'https://openrouter.ai/keys' },
   { id: 'openai',      name: 'OpenAI',      dot: '#10a37f', desc: 'GPT-4o, GPT-4o-mini, o3',         recommended: false, needsKey: true,  keyUrl: 'https://platform.openai.com/api-keys' },
   { id: 'anthropic',   name: 'Anthropic',   dot: '#d4a574', desc: 'Claude Sonnet, Opus, Haiku',     recommended: false, needsKey: true,  keyUrl: 'https://console.anthropic.com/keys' },
   { id: 'google',      name: 'Google',      dot: '#4285f4', desc: 'Gemini 2.0, Gemini 1.5 Pro',      recommended: false, needsKey: true,  keyUrl: 'https://aistudio.google.com/app/apikey' },
   { id: 'deepseek',    name: 'DeepSeek',    dot: '#4d9eff', desc: 'DeepSeek V3, DeepSeek Coder',     recommended: false, needsKey: true,  keyUrl: 'https://platform.deepseek.com/api_keys' },
-  { id: 'groq',        name: 'Groq',        dot: '#f55036', desc: 'Llama 3, Mixtral — ultra rápido', recommended: false, needsKey: true,  keyUrl: 'https://console.groq.com/keys' },
+  { id: 'groq',        name: 'Groq',        dot: '#f55036', desc: 'Llama 3, Mixtral — ultra fast',    recommended: false, needsKey: true,  keyUrl: 'https://console.groq.com/keys' },
   { id: 'mistral',     name: 'Mistral',     dot: '#f7a800', desc: 'Mistral Large, Codestral',        recommended: false, needsKey: true,  keyUrl: 'https://console.mistral.ai/api-keys/' },
   { id: 'together',    name: 'Together AI', dot: '#10b981', desc: 'Llama, Qwen, DeepSeek models',    recommended: false, needsKey: true,  keyUrl: 'https://api.together.xyz/settings/api-keys' },
-  { id: 'perplexity',  name: 'Perplexity',  dot: '#20b2aa', desc: 'Online AI con web search',        recommended: false, needsKey: true,  keyUrl: 'https://www.perplexity.ai/settings/api' },
+  { id: 'perplexity',  name: 'Perplexity',  dot: '#20b2aa', desc: 'Online AI with web search',       recommended: false, needsKey: true,  keyUrl: 'https://www.perplexity.ai/settings/api' },
   { id: 'minimax',     name: 'MiniMax',     dot: '#a855f7', desc: 'Abab6.5s, Hailuo AI',             recommended: false, needsKey: true,  keyUrl: 'https://www.minimax.io/' },
   { id: 'ollama',      name: 'Ollama',      dot: '#1D9E75', desc: 'Modelos locales — sin API key',   recommended: false, needsKey: false, keyUrl: null },
   { id: 'custom',      name: 'Custom',      dot: '#888888', desc: 'Cualquier API OpenAI-compatible', recommended: false, needsKey: true,  keyUrl: null },
@@ -48,11 +48,11 @@ interface Props {
 }
 
 function mapError(code: number | undefined, msg: string | undefined): string {
-  if (code === 401) return 'API key inválida. Verifica que sea correcta.'
-  if (code === 403) return 'Sin acceso. Verifica tu plan o permisos.'
-  if (code === 429) return 'Límite de requests alcanzado. Espera un momento.'
-  if (code === 500 || code === 502 || code === 503) return 'Error del servidor. Intenta más tarde.'
-  return msg ?? 'Error desconocido.'
+  if (code === 401) return 'Invalid API key. Check that it is correct.'
+  if (code === 403) return 'No access. Check your plan or permissions.'
+  if (code === 429) return 'Request limit reached. Wait a moment.'
+  if (code === 500 || code === 502 || code === 503) return 'Server error. Try again later.'
+  return msg ?? 'Unknown error.'
 }
 
 export default function OnboardingOverlay({ onClose }: Props) {
@@ -151,11 +151,11 @@ export default function OnboardingOverlay({ onClose }: Props) {
           <span className="logo-dot" />
           ORION
         </div>
-        <div className="onboarding-sub">AI Coding Agent — Conecta tu primer proveedor para empezar</div>
+        <div className="onboarding-sub">AI Coding Agent — Connect your first provider to get started</div>
 
         {step === 'provider' && (
           <>
-            <div className="step-label">01  Elige tu proveedor de IA</div>
+            <div className="step-label">01  Choose your AI provider</div>
             <div className="provider-grid">
               {PROVIDERS.map(p => (
                 <div
@@ -167,8 +167,8 @@ export default function OnboardingOverlay({ onClose }: Props) {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div className="provider-name">
                       {p.name}
-                      {p.recommended && <span className="recommended-badge">Recomendado</span>}
-                      {isConnected(p.id) && <span className="recommended-badge" style={{ color: 'var(--green-text)', borderColor: 'var(--green)', background: 'var(--green-bg)' }}>conectado</span>}
+                      {p.recommended && <span className="recommended-badge">Recommended</span>}
+                      {isConnected(p.id) && <span className="recommended-badge" style={{ color: 'var(--green-text)', borderColor: 'var(--green)', background: 'var(--green-bg)' }}>connected</span>}
                     </div>
                     <div className="provider-desc">{p.desc}</div>
                   </div>
@@ -177,10 +177,10 @@ export default function OnboardingOverlay({ onClose }: Props) {
             </div>
             <div className="onboarding-actions">
               <span style={{ fontSize: 11, color: 'var(--text-tertiary, #4a4866)', fontFamily: 'JetBrains Mono, monospace' }}>
-                {selected ? `Seleccionado: ${selected.name}` : 'Selecciona un proveedor'}
+                {selected ? `Selected: ${selected.name}` : 'Select a provider'}
               </span>
               <button className="next-btn" disabled={!selected} onClick={onContinueFromProvider}>
-                Continuar →
+                Continue →
               </button>
             </div>
           </>
@@ -188,7 +188,7 @@ export default function OnboardingOverlay({ onClose }: Props) {
 
         {step === 'apikey' && selected && (
           <>
-            <div className="step-label">02  Ingresa tu API key</div>
+            <div className="step-label">02  Enter your API key</div>
             <div className="api-key-section">
               <div className="api-key-label">
                 <span className="api-key-label-text">
@@ -208,7 +208,7 @@ export default function OnboardingOverlay({ onClose }: Props) {
                     target="_blank"
                     rel="noopener noreferrer"
                   >
-                    Obtener API key ↗
+                    Get API key ↗
                   </a>
                 )}
               </div>
@@ -227,7 +227,7 @@ export default function OnboardingOverlay({ onClose }: Props) {
                   }}
                   autoFocus
                 />
-                <button className="toggle-key-btn" onClick={() => setShowKey(s => !s)} title={showKey ? 'Ocultar' : 'Mostrar'}>
+                <button className="toggle-key-btn" onClick={() => setShowKey(s => !s)} title={showKey ? 'Hide' : 'Show'}>
                   {showKey ? '🙈' : '👁'}
                 </button>
               </div>
@@ -235,24 +235,24 @@ export default function OnboardingOverlay({ onClose }: Props) {
                 <input
                   className="api-key-input api-key-input-wrap"
                   style={{ marginTop: 8, padding: '10px 12px', background: 'var(--bg-tertiary)', border: '0.5px solid var(--border-mid)', borderRadius: 8 }}
-                  placeholder="Base URL: https://api.tu-provider.com/v1"
+                  placeholder="Base URL: https://api.your-provider.com/v1"
                   value={customUrl}
                   onChange={e => setCustomUrl(e.target.value)}
                 />
               )}
               <p className="api-key-note">
-                Tu API key se almacena localmente y nunca sale de tu dispositivo.
+                Your API key is stored locally and never leaves your device.
               </p>
               {testError && <div className="error-msg">✗ {testError}</div>}
             </div>
             <div className="onboarding-actions">
-              <button className="back-btn" onClick={() => setStep('provider')}>← Volver</button>
+              <button className="back-btn" onClick={() => setStep('provider')}>← Back</button>
               <button
                 className="next-btn"
                 disabled={!apiKey.trim()}
                 onClick={handleTest}
               >
-                Probar conexión →
+                Test connection →
               </button>
             </div>
           </>
@@ -260,19 +260,19 @@ export default function OnboardingOverlay({ onClose }: Props) {
 
         {step === 'testing' && selected && (
           <>
-            <div className="step-label">03  Probando conexión</div>
+            <div className="step-label">03  Testing connection</div>
             <div className="testing-state">
               <span className="spinner">◌</span>
-              Conectando con {selected.name}...
+              Connecting to {selected.name}...
             </div>
           </>
         )}
 
         {step === 'model' && selected && testResult && (
           <>
-            <div className="step-label">04  Selecciona tu modelo</div>
+            <div className="step-label">04  Select your model</div>
             <div className="test-success">
-              ✓ Conectado — {testResult.models.length} modelos disponibles · {testResult.latency_ms}ms
+              ✓ Connected — {testResult.models.length} models available · {testResult.latency_ms}ms
             </div>
             <div className="model-list">
               {testResult.models.map(m => (
@@ -283,7 +283,7 @@ export default function OnboardingOverlay({ onClose }: Props) {
                 >
                   <span className="model-name">{m.name || m.id}</span>
                   <div className="model-badges">
-                    {m.is_recommended && <span className="model-badge-tag recommended">★ Recomendado</span>}
+                    {m.is_recommended && <span className="model-badge-tag recommended">★ Recommended</span>}
                     {m.badges?.map((b, i) => (
                       <span key={i} className="model-badge-tag">{b}</span>
                     ))}
@@ -292,18 +292,18 @@ export default function OnboardingOverlay({ onClose }: Props) {
               ))}
               {testResult.models.length === 0 && (
                 <div style={{ padding: 16, fontSize: 12, color: 'var(--text-tertiary)', textAlign: 'center', fontStyle: 'italic' }}>
-                  No se detectaron modelos. Podés continuar y configurar el modelo manualmente desde Settings.
+                  No models detected. You can continue and configure the model manually from Settings.
                 </div>
               )}
             </div>
             <div className="onboarding-actions">
-              <button className="back-btn" onClick={() => setStep('apikey')}>← Cambiar key</button>
+              <button className="back-btn" onClick={() => setStep('apikey')}>← Change key</button>
               <button
                 className="next-btn"
                 disabled={!selectedModel}
                 onClick={handleConnect}
               >
-                Comenzar →
+                Start →
               </button>
             </div>
           </>

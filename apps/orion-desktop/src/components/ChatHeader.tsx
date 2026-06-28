@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
 
 interface ModelInfo {
   id: string
@@ -74,7 +75,15 @@ export default function ChatHeader({ sessionTitle, sessionId, onTitleChange, tot
       if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false)
     }
     document.addEventListener('mousedown', onClick)
-    return () => document.removeEventListener('mousedown', onClick)
+    // The backend may auto-select a model on first message — refresh the badge.
+    const unlisten = listen('orion://model_changed', () => {
+      refreshActive()
+      onModelChange?.()
+    })
+    return () => {
+      document.removeEventListener('mousedown', onClick)
+      unlisten.then(fn => fn())
+    }
   }, [])
 
   async function commitTitle() {
@@ -148,16 +157,16 @@ export default function ChatHeader({ sessionTitle, sessionId, onTitleChange, tot
           <button
             className={`model-badge${active ? '' : ' model-badge-empty'}`}
             onClick={() => setOpen(o => !o)}
-            title={active ? `${active.provider_name} · ${active.model_name}` : 'Sin modelo activo'}
+            title={active ? `${active.provider_name} · ${active.model_name}` : 'No model selected'}
           >
             {active
               ? `${active.provider_name} · ${active.model_name} ▾`
-              : 'Sin modelo ▾'}
+              : 'Select model ▾'}
           </button>
           {open && (
             <div className="model-dropdown">
               {models.length === 0 && (
-                <div className="model-dropdown-empty">No hay modelos. Conecta un provider.</div>
+                <div className="model-dropdown-empty">No models. Connect a provider.</div>
               )}
               {models.map(m => {
                 const fullId = `${m.provider}:${m.id}`

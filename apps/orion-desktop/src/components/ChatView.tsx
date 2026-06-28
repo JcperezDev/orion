@@ -224,15 +224,15 @@ export default function ChatView() {
   }, [])
 
   const markStreamEnd = useCallback(() => {
+    // Clear the streaming flag on ANY in-flight assistant bubble, not just the
+    // last message — an error/system message may have been appended after it,
+    // which would otherwise leave the input disabled forever.
     setMessages(prev => {
-      if (prev.length === 0) return prev
-      const last = prev[prev.length - 1]
-      if (last.role === 'assistant' && last.isStreaming) {
-        const next = prev.slice()
-        next[next.length - 1] = { ...last, isStreaming: false }
-        return next
-      }
+      if (!prev.some(m => m.isStreaming)) return prev
       return prev
+        // Drop placeholder assistant bubbles that never received any content.
+        .filter(m => !(m.role === 'assistant' && m.isStreaming && !m.content))
+        .map(m => (m.isStreaming ? { ...m, isStreaming: false } : m))
     })
   }, [])
 
@@ -243,17 +243,17 @@ export default function ChatView() {
       case '/clear':
         setMessages([])
         setTotalTokens(0)
-        pushSystem('Chat limpiado.')
+        pushSystem('Chat cleared.')
         break
 
       case '/help':
         pushSystem([
-          'Comandos disponibles:',
-          '  /clear       — borra todos los mensajes',
-          '  /help        — muestra esta ayuda',
-          '  /providers   — lista providers conectados',
-          '  /model       — muestra el modelo activo',
-          '  /sync        — sincroniza modelos del provider activo',
+          'Available commands:',
+          '  /clear       — clear all messages',
+          '  /help        — show this help',
+          '  /providers   — list connected providers',
+          '  /model       — show the active model',
+          '  /sync        — sync models for the active provider',
         ].join('\n'))
         break
 
@@ -261,9 +261,9 @@ export default function ChatView() {
         try {
           const providers = await invoke<Array<{ id: string; name: string; has_api_key: boolean; models_count: number }>>('get_connected_providers')
           const lines = providers.map(p =>
-            `  ${p.has_api_key ? '●' : '○'} ${p.name.padEnd(20)} ${p.models_count} modelos`
+            `  ${p.has_api_key ? '●' : '○'} ${p.name.padEnd(20)} ${p.models_count} models`
           )
-          pushSystem(`Providers (${providers.length}):\n${lines.join('\n') || '  (ninguno)'}`)
+          pushSystem(`Providers (${providers.length}):\n${lines.join('\n') || '  (none)'}`)
         } catch (e) {
           pushError(String(e))
         }
@@ -278,7 +278,7 @@ export default function ChatView() {
           const list = models.slice(0, 8).map(m =>
             `  ${m.provider}:${m.id.padEnd(28)} ${m.context_window ? m.context_window.toLocaleString() + ' ctx' : ''}`
           ).join('\n')
-          pushSystem(`Modelo actual: ${modelId ?? 'ninguno'}\nModelos disponibles (${models.length}, mostrando 8):\n${list}`)
+          pushSystem(`Active model: ${modelId ?? 'none'}\nAvailable models (${models.length}, showing 8):\n${list}`)
         } catch (e) {
           pushError(String(e))
         }
@@ -289,17 +289,17 @@ export default function ChatView() {
         try {
           const modelId = await invoke<string | null>('get_default_model')
           const targetProvider = modelId?.split(':')[0] ?? 'openrouter'
-          pushSystem(`Sincronizando ${targetProvider}...`)
+          pushSystem(`Syncing ${targetProvider}...`)
           await invoke('sync_provider_models', { providerId: targetProvider })
-          pushSystem('✓ Modelos sincronizados.')
+          pushSystem('✓ Models synced.')
         } catch (e) {
-          pushError(`Sync falló: ${e}`)
+          pushError(`Sync failed: ${e}`)
         }
         break
       }
 
       default:
-        pushSystem(`Comando desconocido: ${command}. Escribe /help.`)
+        pushSystem(`Unknown command: ${command}. Type /help.`)
     }
   }
 
@@ -373,7 +373,7 @@ export default function ChatView() {
       ) : (
         <div className="chat-header">
           <div className="chat-header-left">
-            <span className="session-title" style={{ cursor: 'default' }}>Cargando sesión…</span>
+            <span className="session-title" style={{ cursor: 'default' }}>Loading session…</span>
           </div>
         </div>
       )}
@@ -390,21 +390,26 @@ export default function ChatView() {
       {retryInfo && !limitInfo && (
         <div className="limit-bar retry">
           <span className="limit-bar-text">
-            ⏳ Proveedor ocupado — reintentando (intento {retryInfo.attempt}) en {retryInfo.delaySecs}s…
+            ⏳ Provider busy — retrying (attempt {retryInfo.attempt}) in {retryInfo.delaySecs}s…
           </span>
         </div>
       )}
       {limitInfo && (
         <div className="limit-bar">
           <span className="limit-bar-text">
-            🛑 Límite de uso alcanzado.
-            {limitInfo.retryAfter != null
-              ? ` Se restablece en ~${limitInfo.retryAfter}s.`
-              : ''}{' '}
-            Tu trabajo quedó guardado.
+            🛑 Usage limit reached.
+            {limitInfo.retryAfter != null ? ` Resets in ~${limitInfo.retryAfter}s.` : ''}{' '}
+            {limitInfo.message || ''}
+            {limitInfo.retryAfter == null
+              ? ' Switch to another model in the top bar, or add credits to this provider.'
+              : ' Your work is saved — resume when it resets.'}
           </span>
-          <button className="limit-bar-btn" onClick={handleResume}>Reanudar</button>
-          <button className="undo-bar-dismiss" onClick={() => setLimitInfo(null)} aria-label="Descartar">✕</button>
+          {/* Resume only helps for a temporary limit that resets; for a hard
+              quota/credit limit it would just hit the same error again. */}
+          {limitInfo.retryAfter != null && (
+            <button className="limit-bar-btn" onClick={handleResume}>Resume</button>
+          )}
+          <button className="undo-bar-dismiss" onClick={() => setLimitInfo(null)} aria-label="Dismiss">✕</button>
         </div>
       )}
       <InputArea

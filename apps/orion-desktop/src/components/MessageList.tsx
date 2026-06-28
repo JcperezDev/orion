@@ -29,7 +29,7 @@ function formatTime(iso: string): string {
   try {
     const d = new Date(iso)
     if (isNaN(d.getTime())) return ''
-    return d.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })
+    return d.toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit' })
   } catch {
     return ''
   }
@@ -225,36 +225,36 @@ export default function MessageList({ messages }: Props) {
         <div className="welcome-screen">
           <div className="welcome-content">
             <div className="welcome-logo">ORION</div>
-            <div className="welcome-subtitle">Asistente de codificación con IA</div>
+            <div className="welcome-subtitle">AI coding assistant</div>
             <div className="welcome-shortcuts">
-              <div className="welcome-section-title">Atajos</div>
+              <div className="welcome-section-title">Shortcuts</div>
               <div className="shortcut-row">
                 <span className="shortcut-keys"><kbd>Enter</kbd></span>
-                <span>Enviar mensaje</span>
+                <span>Send message</span>
               </div>
               <div className="shortcut-row">
                 <span className="shortcut-keys"><kbd>Shift</kbd> + <kbd>Enter</kbd></span>
-                <span>Nueva línea</span>
+                <span>New line</span>
               </div>
               <div className="shortcut-row">
                 <span className="shortcut-keys"><kbd>Ctrl</kbd> + <kbd>,</kbd></span>
-                <span>Abrir configuración</span>
+                <span>Open settings</span>
               </div>
             </div>
             <div className="welcome-modes">
-              <div className="welcome-section-title">Modos</div>
+              <div className="welcome-section-title">Modes</div>
               <div className="mode-card-row">
                 <div className="mode-card">
                   <div className="mode-card-title">Build</div>
-                  <div className="mode-card-desc">Respuesta directa del modelo, sin herramientas</div>
+                  <div className="mode-card-desc">Direct model response, no tools</div>
                 </div>
                 <div className="mode-card">
                   <div className="mode-card-title">Plan</div>
-                  <div className="mode-card-desc">Solo lectura: explora el código sin editarlo</div>
+                  <div className="mode-card-desc">Read-only: explore the code without editing</div>
                 </div>
                 <div className="mode-card">
                   <div className="mode-card-title">Agent</div>
-                  <div className="mode-card-desc">ORION usa herramientas: leer, escribir, bash, MCP</div>
+                  <div className="mode-card-desc">ORION uses tools: read, write, bash, MCP</div>
                 </div>
               </div>
             </div>

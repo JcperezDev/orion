@@ -178,7 +178,7 @@ export default function Sidebar({ onOpenSettings, workspaceName, workspacePath }
         <input
           className="sidebar-search-input"
           type="text"
-          placeholder="Buscar sesiones..."
+          placeholder="Search sessions..."
           value={searchQuery}
           onChange={e => setSearchQuery(e.target.value)}
         />
@@ -190,7 +190,7 @@ export default function Sidebar({ onOpenSettings, workspaceName, workspacePath }
         )}
         {!loading && filtered.length === 0 && (
           <div className="session-empty">
-            {searchQuery ? 'Sin resultados' : 'No sessions yet'}
+            {searchQuery ? 'No results' : 'No sessions yet'}
           </div>
         )}
         {error && (

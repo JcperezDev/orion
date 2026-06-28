@@ -24,9 +24,17 @@ function genId(): string {
 }
 
 const MODES: { id: BuildMode; label: string; desc: string }[] = [
-  { id: 'build', label: 'Build', desc: 'Respuesta directa, sin herramientas' },
-  { id: 'plan', label: 'Plan', desc: 'Solo lectura, sin ediciones' },
-  { id: 'agent', label: 'Agent', desc: 'ORION usa herramientas (read, write, bash, MCP)' },
+  { id: 'build', label: 'Build', desc: 'Direct response, no tools' },
+  { id: 'plan', label: 'Plan', desc: 'Read-only, no edits' },
+  { id: 'agent', label: 'Agent', desc: 'ORION uses tools (read, write, bash, MCP)' },
+]
+
+const COMMANDS: { id: string; label: string; desc: string }[] = [
+  { id: '/clear',     label: 'Clear chat',    desc: 'Delete all messages' },
+  { id: '/help',      label: 'Help',          desc: 'Show available commands' },
+  { id: '/providers', label: 'Providers',     desc: 'List connected providers' },
+  { id: '/model',     label: 'Current model', desc: 'Show the model and available ones' },
+  { id: '/sync',      label: 'Sync',          desc: 'Sync models for the active provider' },
 ]
 
 export default function InputArea({
@@ -90,8 +98,25 @@ export default function InputArea({
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Tab autocompletes the top command suggestion.
+    if (hintsVisible && e.key === 'Tab') {
+      e.preventDefault()
+      applyCommand(filteredCommands[0].id)
+      return
+    }
+    if (e.key === 'Escape' && hintsVisible) {
+      e.preventDefault()
+      setShowCommandHints(false)
+      return
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
+      // If a partial command is typed, Enter completes it instead of sending.
+      const typed = input.trim()
+      if (hintsVisible && !COMMANDS.some(c => c.id === typed)) {
+        applyCommand(filteredCommands[0].id)
+        return
+      }
       if (isStreaming) {
         handleStop()
       } else if (canSend) {
@@ -100,10 +125,23 @@ export default function InputArea({
     }
   }
 
+  // Show command hints while typing a slash command name (before any space).
+  const commandQuery = input.startsWith('/') && !input.includes(' ') ? input : null
+  const filteredCommands = commandQuery
+    ? COMMANDS.filter(c => c.id.startsWith(commandQuery))
+    : []
+  const hintsVisible = showCommandHints && filteredCommands.length > 0
+
   const handleChange = (val: string) => {
     setInput(val)
     autoResize()
-    setShowCommandHints(val === '/')
+    setShowCommandHints(val.startsWith('/') && !val.includes(' '))
+  }
+
+  const applyCommand = (id: string) => {
+    setInput(id + ' ')
+    setShowCommandHints(false)
+    taRef.current?.focus()
   }
 
   return (
@@ -115,7 +153,7 @@ export default function InputArea({
             value={input}
             onChange={e => handleChange(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={disabled ? 'Configura un provider primero...' : 'Escribe un mensaje o / para comandos...'}
+            placeholder={disabled ? 'Connect a provider first...' : 'Type a message or / for commands...'}
             disabled={disabled || sending}
             rows={1}
           />
@@ -123,8 +161,8 @@ export default function InputArea({
             <button
               className="stop-btn"
               onClick={handleStop}
-              aria-label="Detener"
-              title="Detener (Enter)"
+              aria-label="Stop"
+              title="Stop"
             >
               ■
             </button>
@@ -133,30 +171,22 @@ export default function InputArea({
               className="send-btn"
               disabled={!canSend}
               onClick={submit}
-              aria-label="Enviar"
-              title="Enviar (Enter)"
+              aria-label="Send"
+              title="Send (Enter)"
             >
               ↑
             </button>
           )}
 
-          {showCommandHints && (
+          {hintsVisible && (
             <div className="command-hints">
-              {[
-                { id: '/clear',     label: 'Limpiar chat', desc: 'Borra todos los mensajes' },
-                { id: '/help',      label: 'Ayuda',        desc: 'Muestra los comandos disponibles' },
-                { id: '/providers', label: 'Ver providers', desc: 'Lista providers conectados' },
-                { id: '/model',     label: 'Modelo actual', desc: 'Muestra el modelo y los disponibles' },
-                { id: '/sync',      label: 'Sincronizar',  desc: 'Sincroniza modelos del provider activo' },
-              ].map(c => (
+              {filteredCommands.map(c => (
                 <div
                   key={c.id}
                   className="command-hint-item"
                   onMouseDown={(e) => {
                     e.preventDefault()
-                    setInput(c.id + ' ')
-                    setShowCommandHints(false)
-                    taRef.current?.focus()
+                    applyCommand(c.id)
                   }}
                 >
                   <span className="command-hint-key">{c.id}</span>
@@ -181,7 +211,7 @@ export default function InputArea({
               </button>
             ))}
           </div>
-          <button className="add-context-btn" disabled>+ Contexto</button>
+          <button className="add-context-btn" disabled>+ Context</button>
           <span className="session-info">{sessionId.slice(0, 8)}</span>
         </div>
       </div>

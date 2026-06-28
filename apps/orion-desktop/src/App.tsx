@@ -95,7 +95,7 @@ export default function App() {
           workspacePath={workspacePath}
         />
         <main className="app-main">
-          {activeView === 'settings' ? <SettingsView /> : <ChatView />}
+          {activeView === 'settings' ? <SettingsView onClose={() => setActiveView('chat')} /> : <ChatView />}
         </main>
       </div>
       {showOnboarding && <OnboardingOverlay onClose={handleOnboardingClose} />}
