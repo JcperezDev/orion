@@ -147,6 +147,16 @@ function applyTheme(t: ThemeDef) {
   set('--accent-muted', mix(t.acc, t.bg, 0.82))
 }
 
+/// Apply the saved theme at app startup (call before React renders) to avoid a
+/// flash of the default theme.
+export function applyStoredTheme() {
+  try {
+    const id = localStorage.getItem('orion-theme') || 'orion-dark'
+    const t = THEMES.find(x => x.id === id) || THEMES[0]
+    applyTheme(t)
+  } catch { /* ignore */ }
+}
+
 // Fully theme-controlled dropdown (native <select> popups ignore CSS on
 // WebKitGTK and render white, so we render our own menu).
 function ThemedSelect({
