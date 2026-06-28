@@ -50,6 +50,17 @@ function GearIcon() {
   )
 }
 
+function TrashIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+      <path d="M2.5 3.5 H11.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+      <path d="M5.5 3.5 V2.5 H8.5 V3.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M3.5 3.5 L4 11.5 H10 L10.5 3.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M6 5.5 V9.5 M8 5.5 V9.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+    </svg>
+  )
+}
+
 function deriveWorkspace(path: string | undefined, fallbackName: string | undefined): { name: string; path: string } {
   if (path) {
     const segments = path.split('/').filter(Boolean)
@@ -119,6 +130,19 @@ export default function Sidebar({ onOpenSettings, workspaceName, workspacePath }
     }
   }
 
+  async function handleDeleteSession(id: string, e: React.MouseEvent) {
+    e.stopPropagation()
+    try {
+      await invoke('delete_session', { id })
+      setSessions(prev => prev.filter(s => s.id !== id))
+      if (id === activeId) {
+        setActiveId(null)
+      }
+    } catch (err) {
+      setError(String(err))
+    }
+  }
+
   const ws = deriveWorkspace(workspacePath, workspaceName)
 
   const filtered = searchQuery
@@ -181,6 +205,14 @@ export default function Sidebar({ onOpenSettings, workspaceName, workspacePath }
           >
             <span className="session-dot" />
             <span className="session-title">{s.title}</span>
+            <button
+              className="session-delete"
+              aria-label="Delete session"
+              title="Delete session"
+              onClick={e => handleDeleteSession(s.id, e)}
+            >
+              <TrashIcon />
+            </button>
           </div>
         ))}
         {!showAll && hasMore && !searchQuery && (

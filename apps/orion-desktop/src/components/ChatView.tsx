@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import ChatHeader from './ChatHeader'
@@ -47,6 +47,9 @@ export default function ChatView() {
   const [totalTokens, setTotalTokens] = useState(0)
   const [contextWindow, setContextWindow] = useState<number>(0)
   const [undoable, setUndoable] = useState<{ id: string; summary: string; paths: string[] } | null>(null)
+  const [limitInfo, setLimitInfo] = useState<{ message: string; retryAfter: number | null } | null>(null)
+  const [retryInfo, setRetryInfo] = useState<{ attempt: number; delaySecs: number } | null>(null)
+  const lastSubmitRef = useRef<{ text: string; mode?: string } | null>(null)
 
   // Load active session on mount
   useEffect(() => {
@@ -67,6 +70,7 @@ export default function ChatView() {
     let mounted = true
 
     listen<string>('orion://token', e => {
+      setRetryInfo(null)
       appendToken(e.payload)
     }).then(fn => { if (mounted) unlistens.push(fn); else fn() })
 
@@ -84,11 +88,22 @@ export default function ChatView() {
     }).then(fn => { if (mounted) unlistens.push(fn); else fn() })
 
     listen<void>('orion://done', () => {
+      setRetryInfo(null)
       markStreamEnd()
     }).then(fn => { if (mounted) unlistens.push(fn); else fn() })
 
     listen<{ tool_call_id: string; summary: string; paths: string[] }>('orion://undoable', e => {
       setUndoable({ id: e.payload.tool_call_id, summary: e.payload.summary, paths: e.payload.paths })
+    }).then(fn => { if (mounted) unlistens.push(fn); else fn() })
+
+    listen<{ attempt: number; delay_secs: number; reason: string }>('orion://retrying', e => {
+      setRetryInfo({ attempt: e.payload.attempt, delaySecs: e.payload.delay_secs })
+    }).then(fn => { if (mounted) unlistens.push(fn); else fn() })
+
+    listen<{ retry_after_secs: number | null; message: string }>('orion://limit_reached', e => {
+      setRetryInfo(null)
+      setLimitInfo({ message: e.payload.message, retryAfter: e.payload.retry_after_secs })
+      markStreamEnd()
     }).then(fn => { if (mounted) unlistens.push(fn); else fn() })
 
     return () => {
@@ -299,6 +314,8 @@ export default function ChatView() {
     }
 
     // Regular LLM message — echo user + create empty assistant bubble for streaming
+    setLimitInfo(null)
+    lastSubmitRef.current = { text, mode: payload.mode }
     pushMessage({
       id: genId(), role: 'user', content: text, timestamp: nowIso(),
     })
@@ -311,6 +328,26 @@ export default function ChatView() {
         sessionId: activeSession.id,
         content: text,
         mode: payload.mode,
+      })
+    } catch (e) {
+      pushError(String(e))
+      markStreamEnd()
+    }
+  }, [activeSession, markStreamEnd, pushError, pushMessage])
+
+  // Resume the checkpointed work after a usage limit: re-run the last prompt.
+  const handleResume = useCallback(async () => {
+    const last = lastSubmitRef.current
+    if (!activeSession || !last) return
+    setLimitInfo(null)
+    pushMessage({
+      id: genId(), role: 'assistant', content: '', timestamp: nowIso(), isStreaming: true,
+    })
+    try {
+      await invoke<string>('send_message', {
+        sessionId: activeSession.id,
+        content: last.text,
+        mode: last.mode,
       })
     } catch (e) {
       pushError(String(e))
@@ -348,6 +385,26 @@ export default function ChatView() {
           </span>
           <button className="undo-bar-btn" onClick={handleUndo}>Undo</button>
           <button className="undo-bar-dismiss" onClick={() => setUndoable(null)} aria-label="Dismiss">✕</button>
+        </div>
+      )}
+      {retryInfo && !limitInfo && (
+        <div className="limit-bar retry">
+          <span className="limit-bar-text">
+            ⏳ Proveedor ocupado — reintentando (intento {retryInfo.attempt}) en {retryInfo.delaySecs}s…
+          </span>
+        </div>
+      )}
+      {limitInfo && (
+        <div className="limit-bar">
+          <span className="limit-bar-text">
+            🛑 Límite de uso alcanzado.
+            {limitInfo.retryAfter != null
+              ? ` Se restablece en ~${limitInfo.retryAfter}s.`
+              : ''}{' '}
+            Tu trabajo quedó guardado.
+          </span>
+          <button className="limit-bar-btn" onClick={handleResume}>Reanudar</button>
+          <button className="undo-bar-dismiss" onClick={() => setLimitInfo(null)} aria-label="Descartar">✕</button>
         </div>
       )}
       <InputArea

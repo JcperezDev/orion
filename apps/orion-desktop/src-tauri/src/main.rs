@@ -605,6 +605,22 @@ async fn send_message(
                         }),
                     );
                 }
+                DispatchEvent::Retrying { attempt, delay_secs, reason } => {
+                    let _ = app_handle.emit(
+                        "orion://retrying",
+                        serde_json::json!({ "attempt": attempt, "delay_secs": delay_secs, "reason": reason }),
+                    );
+                }
+                DispatchEvent::LimitReached { retry_after_secs, message } => {
+                    let _ = app_handle.emit(
+                        "orion://limit_reached",
+                        serde_json::json!({ "retry_after_secs": retry_after_secs, "message": message }),
+                    );
+                    // Stop streaming UI; the session keeps its messages so the
+                    // user can resume by sending again once the limit clears.
+                    let _ = app_handle.emit("orion://done", ());
+                    return Ok(full_response);
+                }
                 DispatchEvent::Done { .. } => {
                     let _ = app_handle.emit("orion://done", ());
                 }

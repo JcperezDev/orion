@@ -7,6 +7,7 @@ import ChatView from './components/ChatView'
 import OnboardingOverlay from './components/OnboardingOverlay'
 import SettingsView from './components/SettingsView'
 import { PermissionDialog } from './components/PermissionDialog'
+import ResizeHandles from './components/ResizeHandles'
 
 type View = 'chat' | 'settings'
 
@@ -85,6 +86,7 @@ export default function App() {
 
   return (
     <div className="app-shell">
+      <ResizeHandles />
       <TitleBar onOpenSettings={() => setActiveView('settings')} />
       <div className="app-body">
         <Sidebar

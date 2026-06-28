@@ -120,7 +120,12 @@ export default function TitleBar({ onOpenSettings, onOpenSearch }: Props) {
           </button>
         </div>
       )}
-      <div className="titlebar-title">ORION</div>
+      {!isMac && (
+        <div className="titlebar-brand" data-tauri-drag-region>
+          <img src="/orion.svg" className="titlebar-logo" alt="" draggable={false} />
+        </div>
+      )}
+      <div className="titlebar-title" data-tauri-drag-region>ORION</div>
       <div className="titlebar-right">
         {onOpenSearch && (
           <button className="titlebar-icon" onClick={onOpenSearch} aria-label="Search">

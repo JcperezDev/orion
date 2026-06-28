@@ -1,0 +1,103 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#1A2D6B"/>
+      <stop offset="100%" stop-color="#080E2E"/>
+    </radialGradient>
+    <radialGradient id="s1" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#7CA4FF" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="s2" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#5B82E0" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Background rounded square -->
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+
+  <!-- Background micro-stars -->
+  <circle cx="80" cy="90" r="1.5" fill="#4A6BC0" opacity="0.6"/>
+  <circle cx="420" cy="70" r="1" fill="#4A6BC0" opacity="0.5"/>
+  <circle cx="450" cy="160" r="1.5" fill="#4A6BC0" opacity="0.4"/>
+  <circle cx="60" cy="380" r="1" fill="#4A6BC0" opacity="0.5"/>
+  <circle cx="460" cy="400" r="1.5" fill="#4A6BC0" opacity="0.4"/>
+  <circle cx="390" cy="440" r="1" fill="#4A6BC0" opacity="0.5"/>
+  <circle cx="100" cy="440" r="1.2" fill="#4A6BC0" opacity="0.4"/>
+  <circle cx="480" cy="280" r="1" fill="#4A6BC0" opacity="0.5"/>
+  <circle cx="30"  cy="220" r="1.2" fill="#4A6BC0" opacity="0.4"/>
+  <circle cx="170" cy="60"  r="1"   fill="#4A6BC0" opacity="0.35"/>
+  <circle cx="340" cy="475" r="1"   fill="#4A6BC0" opacity="0.4"/>
+
+  <!-- ── Constellation lines ── -->
+  <!-- shoulders -->
+  <line x1="192" y1="168" x2="320" y2="162" stroke="#5B7FE0" stroke-width="1.2" opacity="0.5"/>
+  <!-- shoulder → belt -->
+  <line x1="192" y1="168" x2="208" y2="268" stroke="#5B7FE0" stroke-width="1.2" opacity="0.4"/>
+  <line x1="320" y1="162" x2="304" y2="268" stroke="#5B7FE0" stroke-width="1.2" opacity="0.4"/>
+  <!-- belt -->
+  <line x1="208" y1="268" x2="256" y2="264" stroke="#7CA4FF" stroke-width="1.5" opacity="0.65"/>
+  <line x1="256" y1="264" x2="304" y2="268" stroke="#7CA4FF" stroke-width="1.5" opacity="0.65"/>
+  <!-- belt → feet -->
+  <line x1="208" y1="268" x2="196" y2="358" stroke="#5B7FE0" stroke-width="1.2" opacity="0.4"/>
+  <line x1="304" y1="268" x2="316" y2="358" stroke="#5B7FE0" stroke-width="1.2" opacity="0.4"/>
+
+  <!-- ── Stars ── -->
+
+  <!-- Head (faint) -->
+  <circle cx="256" cy="112" r="2.5" fill="#8AABFF" opacity="0.55"/>
+  <line x1="256" y1="112" x2="200" y2="160" stroke="#5B7FE0" stroke-width="0.8" opacity="0.25"/>
+  <line x1="256" y1="112" x2="312" y2="158" stroke="#5B7FE0" stroke-width="0.8" opacity="0.25"/>
+
+  <!-- Betelgeuse — left shoulder, biggest -->
+  <circle cx="192" cy="168" r="22" fill="url(#s1)" opacity="0.18"/>
+  <circle cx="192" cy="168" r="11" fill="url(#s1)" opacity="0.45"/>
+  <circle cx="192" cy="168" r="6"  fill="#FFFFFF"/>
+
+  <!-- Bellatrix — right shoulder -->
+  <circle cx="320" cy="162" r="16" fill="url(#s2)" opacity="0.22"/>
+  <circle cx="320" cy="162" r="8"  fill="url(#s2)" opacity="0.5"/>
+  <circle cx="320" cy="162" r="4"  fill="#FFFFFF"/>
+
+  <!-- Alnitak — belt left -->
+  <circle cx="208" cy="268" r="14" fill="url(#s1)" opacity="0.2"/>
+  <circle cx="208" cy="268" r="7"  fill="url(#s1)" opacity="0.6"/>
+  <circle cx="208" cy="268" r="3.5" fill="#FFFFFF"/>
+
+  <!-- Alnilam — belt center, brightest -->
+  <circle cx="256" cy="264" r="18" fill="url(#s1)" opacity="0.22"/>
+  <circle cx="256" cy="264" r="9"  fill="url(#s1)" opacity="0.65"/>
+  <circle cx="256" cy="264" r="4.5" fill="#FFFFFF"/>
+
+  <!-- Mintaka — belt right -->
+  <circle cx="304" cy="268" r="14" fill="url(#s2)" opacity="0.2"/>
+  <circle cx="304" cy="268" r="7"  fill="url(#s2)" opacity="0.6"/>
+  <circle cx="304" cy="268" r="3.5" fill="#FFFFFF"/>
+
+  <!-- Rigel — foot left, blue supergiant -->
+  <circle cx="196" cy="358" r="18" fill="url(#s2)" opacity="0.22"/>
+  <circle cx="196" cy="358" r="9"  fill="url(#s2)" opacity="0.6"/>
+  <circle cx="196" cy="358" r="5"  fill="#FFFFFF"/>
+
+  <!-- Saiph — foot right -->
+  <circle cx="316" cy="358" r="14" fill="url(#s2)" opacity="0.18"/>
+  <circle cx="316" cy="358" r="7"  fill="#C8D8FF" opacity="0.75"/>
+  <circle cx="316" cy="358" r="3.5" fill="#D8E8FF"/>
+
+  <!-- Sword nebula hint -->
+  <ellipse cx="248" cy="310" rx="6" ry="10" fill="#4A6BC0" opacity="0.12"/>
+  <circle cx="248" cy="304" r="2"   fill="#A0BDFF" opacity="0.65"/>
+  <circle cx="250" cy="313" r="1.4" fill="#A0BDFF" opacity="0.5"/>
+  <circle cx="247" cy="322" r="1.6" fill="#A0BDFF" opacity="0.38"/>
+
+  <!-- App name -->
+  <text x="256" y="430"
+        text-anchor="middle"
+        font-family="'Helvetica Neue', Helvetica, Arial, sans-serif"
+        font-weight="200"
+        font-size="52"
+        letter-spacing="18"
+        fill="#FFFFFF"
+        opacity="0.92">ORION</text>
+</svg>

@@ -219,6 +219,22 @@ impl App {
             }
             DispatchEvent::StepSnapshot(_) => {}
             DispatchEvent::Undoable { .. } => {}
+            DispatchEvent::Retrying { attempt, delay_secs, .. } => {
+                self.state.add_message(
+                    "system",
+                    format!("⏳ provider busy — retry {attempt} in {delay_secs}s…"),
+                );
+            }
+            DispatchEvent::LimitReached { retry_after_secs, message } => {
+                let when = retry_after_secs
+                    .map(|s| format!(" Resets in ~{s}s."))
+                    .unwrap_or_default();
+                self.state.add_message(
+                    "system",
+                    format!("🛑 Usage limit reached.{when} Work checkpointed — resume later. ({message})"),
+                );
+                self.state.is_processing = false;
+            }
             DispatchEvent::Done { final_text, .. } => {
                 if !final_text.is_empty() {
                     self.state.add_message("assistant", final_text);

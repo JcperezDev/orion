@@ -728,3 +728,36 @@
   padding: 2px 4px;
 }
 .undo-bar-dismiss:hover { color: var(--text-primary, #e8e6f0); }
+
+/* Usage-limit / retry banner */
+.limit-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 16px 8px;
+  padding: 9px 13px;
+  background: var(--red-bg, rgba(248, 113, 113, 0.1));
+  border: 0.5px solid var(--red, #f87171);
+  border-radius: 8px;
+  font-size: 12px;
+}
+.limit-bar.retry {
+  background: var(--bg-secondary, #16151f);
+  border-color: var(--border-subtle, #2a2838);
+}
+.limit-bar-text {
+  color: var(--text-primary, #e8e6f0);
+  flex: 1;
+}
+.limit-bar-btn {
+  flex-shrink: 0;
+  padding: 4px 14px;
+  border: none;
+  border-radius: 6px;
+  background: var(--accent, #534AB7);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.limit-bar-btn:hover { filter: brightness(1.12); }

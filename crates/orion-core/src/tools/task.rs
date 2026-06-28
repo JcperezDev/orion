@@ -104,6 +104,8 @@ impl Tool for TaskTool {
             agent: None,
             learned: None,
             full_access: false,
+            max_retries: 5,
+            max_backoff: std::time::Duration::from_secs(30),
         };
 
         let dispatcher = Dispatcher::new(

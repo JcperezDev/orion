@@ -1,4 +1,5 @@
 use crate::agents::AgentSpec;
+use crate::core::ratelimit;
 use crate::core::snapshot::{SnapshotManager, StepSnapshot};
 use crate::core::spill::SpillManager;
 use crate::permissions::store::LearnedStore;
@@ -28,6 +29,11 @@ pub struct DispatchConfig {
     pub learned: Option<Arc<LearnedStore>>,
     /// Master switch: when on, the Trust Engine allows everything (no prompts).
     pub full_access: bool,
+    /// How many times to retry a transient provider error before giving up.
+    pub max_retries: usize,
+    /// Longest we'll block waiting on a retry; a usage limit that resets later
+    /// than this checkpoints (LimitReached) instead of busy-waiting.
+    pub max_backoff: std::time::Duration,
 }
 
 impl DispatchConfig {
@@ -41,7 +47,15 @@ impl DispatchConfig {
             agent: None,
             learned: None,
             full_access: false,
+            max_retries: 5,
+            max_backoff: std::time::Duration::from_secs(30),
         }
+    }
+
+    pub fn with_retry(mut self, max_retries: usize, max_backoff: std::time::Duration) -> Self {
+        self.max_retries = max_retries;
+        self.max_backoff = max_backoff;
+        self
     }
 
     pub fn with_approval(mut self, approval: Arc<dyn ApprovalChannel>) -> Self {
@@ -98,6 +112,13 @@ pub enum DispatchEvent {
         summary: String,
         before: Vec<(std::path::PathBuf, Option<String>)>,
     },
+    /// A transient provider error (rate limit / overload / network) is being
+    /// retried after `delay_secs`.
+    Retrying { attempt: u32, delay_secs: u64, reason: String },
+    /// A hard usage limit was hit. The work is checkpointed (the session holds
+    /// the conversation so far); resume once the limit clears. `retry_after_secs`
+    /// is the provider's reset hint when available.
+    LimitReached { retry_after_secs: Option<u64>, message: String },
     Done { steps: usize, final_text: String },
     Error(String),
 }
@@ -188,64 +209,119 @@ impl Dispatcher {
                 tool_defs_openai.clone()
             };
 
-            let mut stream = if !provider.supports_tools(model) {
-                // Provider has no tool support; fall back to text-only path.
-                let mut s = provider.chat_stream(request).await?;
-                let mut out: Vec<DispatchEvent> = Vec::new();
-                while let Some(item) = s.next().await {
-                    match item {
-                        Ok(text) => {
-                            if !text.is_empty() {
-                                out.push(DispatchEvent::Token(text));
-                            }
-                        }
-                        Err(e) => {
-                            out.push(DispatchEvent::Error(e.to_string()));
-                            return Ok(out);
-                        }
-                    }
-                }
-                out.push(DispatchEvent::Done {
-                    steps: step,
-                    final_text: String::new(),
-                });
-                events.extend(out);
-                return Ok(events);
-            } else {
-                // Pass tools (possibly empty) — provider can still stream text-only completion.
-                provider.chat_with_tools(request, tool_defs).await?
-            };
-
+            // --- Provider call with rate-limit-aware retry + checkpoint ---
+            //
+            // Tokens stream live. We only retry when the failure happened
+            // *before* any token was emitted this attempt (the typical place a
+            // rate limit surfaces) — otherwise retrying would duplicate output.
+            // On a hard usage limit we stop with a LimitReached checkpoint so
+            // the work can resume once the limit clears (opencode-style).
+            let supports_tools = provider.supports_tools(model);
             let mut step_text = String::new();
             let mut step_tool_calls: Vec<ToolCall> = Vec::new();
-            let mut step_error: Option<String> = None;
+            let mut attempt: u32 = 0;
 
-            while let Some(item) = stream.next().await {
-                match item {
-                    Ok(StreamChunk::Token { text }) => {
-                        if !text.is_empty() {
-                            step_text.push_str(&text);
-                            events.push(DispatchEvent::Token(text));
+            loop {
+                let req = request.clone();
+                let mut emitted = 0usize;
+                let mut toks_text = String::new();
+                let mut calls: Vec<ToolCall> = Vec::new();
+                let mut err: Option<String> = None;
+
+                if supports_tools {
+                    match provider.chat_with_tools(req, tool_defs.clone()).await {
+                        Ok(mut stream) => {
+                            while let Some(item) = stream.next().await {
+                                match item {
+                                    Ok(StreamChunk::Token { text }) => {
+                                        if !text.is_empty() {
+                                            emitted += 1;
+                                            toks_text.push_str(&text);
+                                            events.push(DispatchEvent::Token(text));
+                                        }
+                                    }
+                                    Ok(StreamChunk::ToolCall { call }) => calls.push(call),
+                                    Ok(StreamChunk::Done { .. }) => break,
+                                    Ok(StreamChunk::Error { message }) => { err = Some(message); break; }
+                                    Err(e) => { err = Some(e.to_string()); break; }
+                                }
+                            }
                         }
+                        Err(e) => err = Some(e.to_string()),
                     }
-                    Ok(StreamChunk::ToolCall { call }) => {
-                        step_tool_calls.push(call);
-                    }
-                    Ok(StreamChunk::Done { .. }) => break,
-                    Ok(StreamChunk::Error { message }) => {
-                        step_error = Some(message);
-                        break;
-                    }
-                    Err(e) => {
-                        step_error = Some(e.to_string());
-                        break;
+                } else {
+                    // Text-only provider (no tool support).
+                    match provider.chat_stream(req).await {
+                        Ok(mut s) => {
+                            while let Some(item) = s.next().await {
+                                match item {
+                                    Ok(text) => {
+                                        if !text.is_empty() {
+                                            emitted += 1;
+                                            toks_text.push_str(&text);
+                                            events.push(DispatchEvent::Token(text));
+                                        }
+                                    }
+                                    Err(e) => { err = Some(e.to_string()); break; }
+                                }
+                            }
+                        }
+                        Err(e) => err = Some(e.to_string()),
                     }
                 }
-            }
 
-            if let Some(msg) = step_error {
-                events.push(DispatchEvent::Error(msg));
-                return Ok(events);
+                match err {
+                    None => {
+                        step_text = toks_text;
+                        step_tool_calls = calls;
+                        break;
+                    }
+                    Some(msg) => {
+                        let class = ratelimit::classify_error(&msg);
+                        let retry_after = match &class {
+                            ratelimit::ErrorClass::RateLimited { retry_after } => *retry_after,
+                            _ => None,
+                        };
+                        let delay = ratelimit::backoff_delay(
+                            attempt,
+                            retry_after,
+                            self.config.max_backoff,
+                        );
+                        // A usage limit that resets later than we're willing to
+                        // block for: checkpoint instead of busy-waiting.
+                        let wait_too_long = retry_after
+                            .map(|s| std::time::Duration::from_secs(s) > self.config.max_backoff)
+                            .unwrap_or(false);
+                        let can_retry = class.is_retryable()
+                            && emitted == 0
+                            && (attempt as usize) < self.config.max_retries
+                            && !wait_too_long;
+
+                        if can_retry {
+                            events.push(DispatchEvent::Retrying {
+                                attempt: attempt + 1,
+                                delay_secs: delay.as_secs(),
+                                reason: msg.clone(),
+                            });
+                            tokio::time::sleep(delay).await;
+                            attempt += 1;
+                            continue;
+                        }
+
+                        if class.is_limit() {
+                            // Checkpoint: current_messages already holds the work
+                            // up to here (the session persists it), so resuming
+                            // simply re-runs from this point.
+                            events.push(DispatchEvent::LimitReached {
+                                retry_after_secs: retry_after,
+                                message: msg,
+                            });
+                        } else {
+                            events.push(DispatchEvent::Error(msg));
+                        }
+                        return Ok(events);
+                    }
+                }
             }
 
             if step_tool_calls.is_empty() {
@@ -739,6 +815,100 @@ mod tests {
 
     fn danger_call() -> ToolCall {
         ToolCall { id: "c1".into(), name: "danger".into(), arguments: serde_json::json!({}) }
+    }
+
+    /// A provider that fails `fails_left` times with `error_msg`, then streams
+    /// `success`. Used to exercise the retry / LimitReached paths.
+    struct FlakyProvider {
+        fails_left: Mutex<usize>,
+        error_msg: String,
+        success: Vec<StreamChunk>,
+    }
+
+    #[async_trait]
+    impl LlmProvider for FlakyProvider {
+        async fn chat_stream(&self, _request: ChatRequest) -> Result<TokenStream> {
+            unreachable!()
+        }
+        async fn chat_with_tools(
+            &self,
+            _request: ChatRequest,
+            _tools: Vec<serde_json::Value>,
+        ) -> Result<ChunkStream> {
+            let fail = {
+                let mut n = self.fails_left.lock();
+                if *n > 0 { *n -= 1; true } else { false }
+            };
+            if fail {
+                let msg = self.error_msg.clone();
+                return Ok(Box::pin(stream::iter(vec![Ok(StreamChunk::Error { message: msg })])));
+            }
+            Ok(Box::pin(stream::iter(self.success.clone().into_iter().map(Ok))))
+        }
+        fn provider_id(&self) -> &str { "flaky" }
+        fn supports_tools(&self, _model: &str) -> bool { true }
+        fn base_url(&self) -> &str { "" }
+        fn api_key_env(&self) -> &str { "" }
+    }
+
+    #[tokio::test]
+    async fn hard_usage_limit_checkpoints_without_busy_waiting() {
+        // A limit that resets far in the future must NOT be retried in-loop; it
+        // emits LimitReached so the work can resume later.
+        let provider = Arc::new(FlakyProvider {
+            fails_left: Mutex::new(100),
+            error_msg: "Usage limit reached, resets in 3600 seconds".into(),
+            success: vec![],
+        });
+        let dispatcher = Dispatcher::new(
+            Arc::new(ToolRegistry::new()),
+            Arc::new(PermissionEngine::new(PermissionConfig::permissive())),
+            DispatchConfig::new(std::env::temp_dir()),
+        );
+        let events = dispatcher
+            .run(provider, "flaky", "m", vec![Message { role: "user".into(), content: "go".into(), ..Default::default() }])
+            .await
+            .unwrap();
+
+        match events.last() {
+            Some(DispatchEvent::LimitReached { retry_after_secs, .. }) => {
+                assert_eq!(*retry_after_secs, Some(3600));
+            }
+            other => panic!("expected LimitReached, got {:?}", other.map(|_| "other")),
+        }
+        // No retries should have been attempted (wait too long).
+        assert!(!events.iter().any(|e| matches!(e, DispatchEvent::Retrying { .. })));
+    }
+
+    #[tokio::test]
+    async fn transient_error_retries_then_succeeds() {
+        // Two connection resets, then a clean completion. With zero backoff the
+        // retries are instant.
+        let provider = Arc::new(FlakyProvider {
+            fails_left: Mutex::new(2),
+            error_msg: "connection reset by peer".into(),
+            success: vec![
+                StreamChunk::Token { text: "recovered".into() },
+                StreamChunk::Done { stop_reason: Some("stop".into()) },
+            ],
+        });
+        let dispatcher = Dispatcher::new(
+            Arc::new(ToolRegistry::new()),
+            Arc::new(PermissionEngine::new(PermissionConfig::permissive())),
+            DispatchConfig::new(std::env::temp_dir())
+                .with_retry(5, std::time::Duration::ZERO),
+        );
+        let events = dispatcher
+            .run(provider, "flaky", "m", vec![Message { role: "user".into(), content: "go".into(), ..Default::default() }])
+            .await
+            .unwrap();
+
+        let retries = events.iter().filter(|e| matches!(e, DispatchEvent::Retrying { .. })).count();
+        assert_eq!(retries, 2, "should retry twice");
+        let done = events.iter().any(|e| matches!(
+            e, DispatchEvent::Done { final_text, .. } if final_text.contains("recovered")
+        ));
+        assert!(done, "should complete after recovering");
     }
 
     #[tokio::test]
