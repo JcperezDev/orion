@@ -87,7 +87,7 @@ export default function App() {
   return (
     <div className="app-shell">
       <ResizeHandles />
-      <TitleBar onOpenSettings={() => setActiveView('settings')} />
+      <TitleBar />
       <div className="app-body">
         <Sidebar
           onOpenSettings={() => setActiveView('settings')}

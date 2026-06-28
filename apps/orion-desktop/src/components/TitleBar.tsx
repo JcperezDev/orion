@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 
 interface Props {
-  onOpenSettings: () => void
   onOpenSearch?: () => void
 }
 
@@ -66,21 +65,7 @@ function SearchIcon() {
   )
 }
 
-function SettingsIcon() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
-      <circle cx="6.5" cy="6.5" r="2" stroke="currentColor" strokeWidth="1.2" fill="none" />
-      <path
-        d="M6.5 0.5 L6.5 2.5 M6.5 10.5 L6.5 12.5 M0.5 6.5 L2.5 6.5 M10.5 6.5 L12.5 6.5 M2.2 2.2 L3.6 3.6 M9.4 9.4 L10.8 10.8 M10.8 2.2 L9.4 3.6 M3.6 9.4 L2.2 10.8"
-        stroke="currentColor"
-        strokeWidth="1.2"
-        strokeLinecap="round"
-      />
-    </svg>
-  )
-}
-
-export default function TitleBar({ onOpenSettings, onOpenSearch }: Props) {
+export default function TitleBar({ onOpenSearch }: Props) {
   const [maximized, setMaximized] = useState(false)
 
   useEffect(() => {
@@ -132,9 +117,6 @@ export default function TitleBar({ onOpenSettings, onOpenSearch }: Props) {
             <SearchIcon />
           </button>
         )}
-        <button className="titlebar-icon" onClick={onOpenSettings} aria-label="Settings">
-          <SettingsIcon />
-        </button>
         {!isMac && (
           <div className="titlebar-buttons">
             <button className="titlebar-btn" onClick={onMinimize} aria-label="Minimize">
