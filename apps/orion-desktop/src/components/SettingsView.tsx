@@ -829,16 +829,6 @@ function AppearanceSection({ theme, onThemeChange }: { theme: string; onThemeCha
 }
 
 function AboutSection() {
-  const [appInfo, setAppInfo] = useState<{ version: string; platform: string; arch: string } | null>(null)
-
-  useEffect(() => {
-    setAppInfo({
-      version: '0.1.0',
-      platform: navigator.platform || 'unknown',
-      arch: navigator.userAgent.includes('x86_64') ? 'x86_64' : 'unknown',
-    })
-  }, [])
-
   return (
     <div>
       <SectionTitle>General</SectionTitle>
@@ -851,33 +841,9 @@ function AboutSection() {
           padding: '16px 20px',
         }}
       >
-        <Row label="Auto-launch on startup">
-          <input type="checkbox" disabled />
-        </Row>
-        <Row label="Check for updates">
-          <input type="checkbox" defaultChecked disabled />
-        </Row>
-        <Row label="Send anonymous telemetry">
-          <input type="checkbox" disabled />
-        </Row>
         <Row label="Version">
           <span style={{ fontSize: '12px', fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-primary)' }}>
-            {appInfo?.version || '0.1.0'}
-          </span>
-        </Row>
-        <Row label="Platform">
-          <span style={{ fontSize: '12px', fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-primary)' }}>
-            {appInfo?.platform || 'unknown'} · {appInfo?.arch || '?'}
-          </span>
-        </Row>
-        <Row label="Renderer">
-          <span style={{ fontSize: '12px', fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-primary)' }}>
-            Tauri 2 + WebView
-          </span>
-        </Row>
-        <Row label="Core">
-          <span style={{ fontSize: '12px', fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-primary)' }}>
-            orion-core (in-process)
+            0.1.1
           </span>
         </Row>
       </div>
@@ -892,13 +858,12 @@ function AboutSection() {
         <div className="flex items-center gap-2 mb-2">
           <Plug className="size-4" style={{ color: 'var(--accent-text)' }} />
           <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--accent-text)' }}>
-            Bring your own keys
+            Your keys stay on your machine
           </span>
         </div>
         <p style={{ fontSize: '11px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-          ORION routes to any provider. Your API keys are stored locally in a SQLite database at
-          <span style={{ fontFamily: "'JetBrains Mono', monospace", color: 'var(--accent-text)' }}> ~/.config/orion/catalog.db</span>
-          {' '}and never leave your machine.
+          Bring your own provider keys. They are stored securely in your operating system's
+          keyring and never leave your device. No telemetry, no tracking.
         </p>
       </div>
     </div>
