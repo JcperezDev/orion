@@ -117,7 +117,8 @@ export default function ChatHeader({ sessionTitle, sessionId, onTitleChange, tot
   const pct = tokenLimit > 0 ? Math.min(100, Math.round((totalTokens / tokenLimit) * 100)) : 0
   const tokenClass = pct >= 90 ? 'danger' : pct >= 75 ? 'warn' : ''
   const fmtTokens = (n: number) => {
-    if (n >= 1000) return `${(n / 1000).toFixed(1)}K`
+    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n % 1_000_000 === 0 ? 0 : 1)}M`
+    if (n >= 1000) return `${(n / 1000).toFixed(n % 1000 === 0 ? 0 : 1)}K`
     return n.toString()
   }
 
@@ -186,8 +187,13 @@ export default function ChatHeader({ sessionTitle, sessionId, onTitleChange, tot
           )}
         </div>
 
-        <span className={`token-badge ${tokenClass}`}>
-          {fmtTokens(totalTokens)}{tokenLimit > 0 ? ` · ${pct}%` : ''}
+        <span
+          className={`token-badge ${tokenClass}`}
+          title={tokenLimit > 0 ? `${totalTokens} of ${tokenLimit} context tokens used (${pct}%)` : `${totalTokens} tokens`}
+        >
+          {tokenLimit > 0
+            ? `${fmtTokens(totalTokens)} / ${fmtTokens(tokenLimit)}`
+            : `${fmtTokens(totalTokens)} tokens`}
         </span>
       </div>
     </div>

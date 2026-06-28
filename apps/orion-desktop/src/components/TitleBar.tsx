@@ -105,11 +105,6 @@ export default function TitleBar({ onOpenSearch }: Props) {
           </button>
         </div>
       )}
-      {!isMac && (
-        <div className="titlebar-brand" data-tauri-drag-region>
-          <img src="/orion.svg" className="titlebar-logo" alt="" draggable={false} />
-        </div>
-      )}
       <div className="titlebar-title" data-tauri-drag-region>ORION</div>
       <div className="titlebar-right">
         {onOpenSearch && (
