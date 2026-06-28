@@ -5,6 +5,7 @@ import ChatHeader from './ChatHeader'
 import MessageList, { ChatMessage } from './MessageList'
 import InputArea, { type SubmitPayload } from './InputArea'
 import { ModelPicker } from './ModelPicker'
+import { useT } from '../i18n'
 
 interface Session {
   id: string
@@ -43,6 +44,7 @@ function nowIso() {
 }
 
 export default function ChatView() {
+  const t = useT()
   const [activeSession, setActiveSession] = useState<Session | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [totalTokens, setTotalTokens] = useState(0)
@@ -441,7 +443,7 @@ export default function ChatView() {
       ) : (
         <div className="chat-header">
           <div className="chat-header-left">
-            <span className="session-title" style={{ cursor: 'default' }}>Loading session…</span>
+            <span className="session-title" style={{ cursor: 'default' }}>{t('header.loadingSession')}</span>
           </div>
         </div>
       )}

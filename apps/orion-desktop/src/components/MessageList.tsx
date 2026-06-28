@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useT } from '../i18n'
 
 export type MessageRole = 'system' | 'assistant' | 'user' | 'tool_call' | 'error'
 
@@ -152,6 +153,7 @@ function ToolCard({ tool }: { tool: ToolInfo }) {
 }
 
 export default function MessageList({ messages }: Props) {
+  const t = useT()
   const containerRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const userScrolledUp = useRef(false)
@@ -225,36 +227,36 @@ export default function MessageList({ messages }: Props) {
         <div className="welcome-screen">
           <div className="welcome-content">
             <div className="welcome-logo">ORION</div>
-            <div className="welcome-subtitle">AI coding assistant</div>
+            <div className="welcome-subtitle">{t('welcome.subtitle')}</div>
             <div className="welcome-shortcuts">
-              <div className="welcome-section-title">Shortcuts</div>
+              <div className="welcome-section-title">{t('welcome.shortcuts')}</div>
               <div className="shortcut-row">
                 <span className="shortcut-keys"><kbd>Enter</kbd></span>
-                <span>Send message</span>
+                <span>{t('welcome.send')}</span>
               </div>
               <div className="shortcut-row">
                 <span className="shortcut-keys"><kbd>Shift</kbd> + <kbd>Enter</kbd></span>
-                <span>New line</span>
+                <span>{t('welcome.newline')}</span>
               </div>
               <div className="shortcut-row">
                 <span className="shortcut-keys"><kbd>Ctrl</kbd> + <kbd>,</kbd></span>
-                <span>Open settings</span>
+                <span>{t('welcome.openSettings')}</span>
               </div>
             </div>
             <div className="welcome-modes">
-              <div className="welcome-section-title">Modes</div>
+              <div className="welcome-section-title">{t('welcome.modes')}</div>
               <div className="mode-card-row">
                 <div className="mode-card">
                   <div className="mode-card-title">Build</div>
-                  <div className="mode-card-desc">Direct model response, no tools</div>
+                  <div className="mode-card-desc">{t('mode.build.desc')}</div>
                 </div>
                 <div className="mode-card">
                   <div className="mode-card-title">Plan</div>
-                  <div className="mode-card-desc">Read-only: explore the code without editing</div>
+                  <div className="mode-card-desc">{t('mode.plan.desc')}</div>
                 </div>
                 <div className="mode-card">
                   <div className="mode-card-title">Agent</div>
-                  <div className="mode-card-desc">ORION uses tools: read, write, bash, MCP</div>
+                  <div className="mode-card-desc">{t('mode.agent.desc')}</div>
                 </div>
               </div>
             </div>

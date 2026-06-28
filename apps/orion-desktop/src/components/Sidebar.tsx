@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
+import { useT } from '../i18n'
 
 interface Session {
   id: string
@@ -78,6 +79,7 @@ function truncatePath(p: string, max: number = 32): string {
 }
 
 export default function Sidebar({ onOpenSettings, workspaceName, workspacePath }: Props) {
+  const t = useT()
   const [sessions, setSessions] = useState<Session[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [showAll, setShowAll] = useState(false)
@@ -182,11 +184,11 @@ export default function Sidebar({ onOpenSettings, workspaceName, workspacePath }
 
       <button className="new-session-btn" onClick={handleNewSession}>
         <PlusIcon />
-        <span>New session</span>
+        <span>{t('sidebar.newSession')}</span>
       </button>
 
       <div className="sessions-label">
-        <span>SESSIONS</span>
+        <span>{t('sidebar.sessions').toUpperCase()}</span>
         <span className="sessions-count">{filtered.length}</span>
       </div>
 
@@ -194,7 +196,7 @@ export default function Sidebar({ onOpenSettings, workspaceName, workspacePath }
         <input
           className="sidebar-search-input"
           type="text"
-          placeholder="Search sessions..."
+          placeholder={t('sidebar.search')}
           value={searchQuery}
           onChange={e => setSearchQuery(e.target.value)}
         />
@@ -202,11 +204,11 @@ export default function Sidebar({ onOpenSettings, workspaceName, workspacePath }
 
       <div className="sessions-list">
         {loading && sessions.length === 0 && (
-          <div className="session-empty">Loading…</div>
+          <div className="session-empty">{t('sidebar.loading')}</div>
         )}
         {!loading && filtered.length === 0 && (
           <div className="session-empty">
-            {searchQuery ? 'No results' : 'No sessions yet'}
+            {searchQuery ? t('sidebar.noResults') : t('sidebar.noSessions')}
           </div>
         )}
         {error && (
@@ -241,7 +243,7 @@ export default function Sidebar({ onOpenSettings, workspaceName, workspacePath }
       <div className="sidebar-bottom">
         <button className="settings-btn" onClick={onOpenSettings}>
           <GearIcon />
-          <span>Settings</span>
+          <span>{t('sidebar.settings')}</span>
         </button>
       </div>
     </aside>

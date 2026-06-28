@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import type { ChatMessage } from './MessageList'
+import { useT } from '../i18n'
 
 export type BuildMode = 'build' | 'plan' | 'agent'
 
@@ -46,6 +47,7 @@ export default function InputArea({
   onUserMessage,
   onSendingChange,
 }: Props) {
+  const t = useT()
   const [input, setInput] = useState('')
   const [mode, setMode] = useState<BuildMode>('build')
   const [sending, setSending] = useState(false)
@@ -154,7 +156,7 @@ export default function InputArea({
             value={input}
             onChange={e => handleChange(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={disabled ? 'Connect a provider first...' : 'Type a message or / for commands...'}
+            placeholder={disabled ? t('input.connectFirst') : t('input.placeholder')}
             disabled={disabled || sending}
             rows={1}
           />
@@ -206,13 +208,13 @@ export default function InputArea({
                 className={`mode-pill${mode === m.id ? ' active' : ''}`}
                 onClick={() => setMode(m.id)}
                 disabled={sending || isStreaming}
-                title={m.desc}
+                title={t(`mode.${m.id}.desc`)}
               >
                 {m.label}
               </button>
             ))}
           </div>
-          <button className="add-context-btn" disabled>+ Context</button>
+          <button className="add-context-btn" disabled>{t('input.context')}</button>
           <span className="session-info">{sessionId.slice(0, 8)}</span>
         </div>
       </div>

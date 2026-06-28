@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
+import { useT } from '../i18n'
 
 interface ModelInfo {
   id: string
@@ -30,6 +31,7 @@ interface Props {
 }
 
 export default function ChatHeader({ sessionTitle, sessionId, onTitleChange, totalTokens, tokenLimit, onModelChange }: Props) {
+  const t = useT()
   const [editing, setEditing] = useState(false)
   const [title, setTitle] = useState(sessionTitle)
   const [active, setActive] = useState<ActiveConfig | null>(null)
@@ -163,11 +165,11 @@ export default function ChatHeader({ sessionTitle, sessionId, onTitleChange, tot
           <button
             className={`model-badge${active ? '' : ' model-badge-empty'}`}
             onClick={() => setOpen(o => !o)}
-            title={active ? `${active.provider_name} · ${active.model_name}` : 'No model selected'}
+            title={active ? `${active.provider_name} · ${active.model_name}` : t('header.selectModel')}
           >
             {active
               ? `${active.provider_name} · ${active.model_name} ▾`
-              : 'Select model ▾'}
+              : `${t('header.selectModel')} ▾`}
           </button>
           {open && (
             <div className="model-dropdown">

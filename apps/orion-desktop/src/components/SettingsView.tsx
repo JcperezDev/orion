@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { invoke } from '@tauri-apps/api/core'
+import { useT, useLang, LANGS } from '../i18n'
 import {
   Check,
   X,
@@ -247,6 +248,7 @@ interface SectionDef {
 }
 
 export default function SettingsView({ onClose }: { onClose?: () => void }) {
+  const t = useT()
   const [activeSection, setActiveSection] = useState<Section>(() => {
     if (typeof window === 'undefined') return 'providers'
     const m = window.location.hash.match(/^#settings\/([a-z]+)/)
@@ -386,10 +388,10 @@ export default function SettingsView({ onClose }: { onClose?: () => void }) {
           }}
           onMouseEnter={e => { (e.currentTarget.style.background = 'var(--bg-tertiary)'); (e.currentTarget.style.color = 'var(--text-primary)') }}
           onMouseLeave={e => { (e.currentTarget.style.background = 'transparent'); (e.currentTarget.style.color = 'var(--text-secondary)') }}
-          title="Back to chat (Esc)"
+          title={`${t('settings.backToChat')} (Esc)`}
         >
           <span style={{ fontSize: 14, lineHeight: 1 }}>←</span>
-          <span>Back to chat</span>
+          <span>{t('settings.backToChat')}</span>
         </button>
         <div
           className="px-2 mb-3"
@@ -1005,35 +1007,28 @@ function GeneralSection() {
 }
 
 function LanguageSection() {
-  const [lang, setLang] = useState(() => localStorage.getItem('orion-lang') ?? 'en')
-  useEffect(() => {
-    localStorage.setItem('orion-lang', lang)
-  }, [lang])
+  const { lang, setLang } = useLang()
 
   return (
     <div>
       <SectionTitle>Language</SectionTitle>
       <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: 12, lineHeight: 1.6 }}>
-        The interface is currently English-only. Your preference is saved for when UI translations land.
+        Changes the interface language instantly. Core UI is translated; some deep settings text
+        falls back to English.
       </p>
       <div
         className="rounded-lg"
         style={{ background: 'var(--bg-secondary)', border: '0.5px solid var(--border-subtle)', padding: '4px 8px' }}
       >
-        {[
-          { id: 'en', label: 'English', hint: 'default' },
-          { id: 'es', label: 'Español' },
-          { id: 'pt', label: 'Português' },
-          { id: 'zh', label: '中文' },
-        ].map(l => (
+        {LANGS.map((l, i) => (
           <label
             key={l.id}
             className="flex items-center justify-between cursor-pointer"
-            style={{ padding: '11px 12px', borderBottom: '0.5px solid var(--border-subtle)' }}
+            style={{ padding: '11px 12px', borderBottom: i < LANGS.length - 1 ? '0.5px solid var(--border-subtle)' : 'none' }}
           >
             <div>
               <div style={{ fontSize: '13px', color: 'var(--text-primary)' }}>{l.label}</div>
-              {l.hint && <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginTop: 2 }}>{l.hint}</div>}
+              {l.id === 'en' && <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginTop: 2 }}>default</div>}
             </div>
             <input
               type="radio"
@@ -1046,7 +1041,7 @@ function LanguageSection() {
         ))}
       </div>
       <p className="mt-3" style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>
-        Language changes UI strings only. LLM responses follow the system prompt regardless.
+        UI language only. LLM responses follow your prompt and the model.
       </p>
     </div>
   )
