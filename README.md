@@ -14,13 +14,23 @@ Multi-surface AI coding agent built in Rust. One binary (`orion`) drives the TUI
 
 ## Install
 
+**One-liner (downloads a prebuilt release):**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/JcperezDev/orion/master/install.sh | bash
+```
+
+The script detects your OS/arch (Linux & macOS, x86_64 & arm64) and installs `orion` + `orion-server` to `~/.local/bin/`. Requires a published [release](https://github.com/JcperezDev/orion/releases).
+
+**From source:**
+
 ```bash
 git clone https://github.com/JcperezDev/orion
 cd orion
-./install.sh
+./install.sh        # same script — builds in release mode when run inside the repo
 ```
 
-`install.sh` builds `orion` (CLI) and `orion-server` (HTTP) in release mode and copies them to `~/.local/bin/`. Override the install dir with `ORION_INSTALL_DIR=/path ./install.sh`.
+Override the install dir with `ORION_INSTALL_DIR=/path`. Windows users can grab the `.zip` from the releases page.
 
 Desktop app (dev):
 

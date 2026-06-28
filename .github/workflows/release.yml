@@ -1,0 +1,81 @@
+name: Release
+
+# Build the CLI binaries (orion + orion-server) for each platform and attach
+# them to a GitHub Release whenever a version tag is pushed:
+#
+#   git tag v0.1.0 && git push origin v0.1.0
+#
+# The install script then downloads the right archive for the user's OS/arch.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: macos-13
+            target: x86_64-apple-darwin
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux keyring deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libdbus-1-dev pkg-config
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build --release --locked --target ${{ matrix.target }} -p orion -p orion-server
+
+      - name: Package (unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          dir="orion-${{ matrix.target }}"
+          mkdir "$dir"
+          cp "target/${{ matrix.target }}/release/orion" "$dir/"
+          cp "target/${{ matrix.target }}/release/orion-server" "$dir/"
+          cp README.md LICENSE "$dir/" 2>/dev/null || true
+          tar -czf "$dir.tar.gz" "$dir"
+
+      - name: Package (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $dir = "orion-${{ matrix.target }}"
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/orion.exe" $dir
+          Copy-Item "target/${{ matrix.target }}/release/orion-server.exe" $dir
+          Copy-Item README.md, LICENSE $dir -ErrorAction SilentlyContinue
+          Compress-Archive -Path $dir -DestinationPath "$dir.zip"
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            orion-${{ matrix.target }}.tar.gz
+            orion-${{ matrix.target }}.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
