@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import {
   Check,
@@ -145,6 +145,76 @@ function applyTheme(t: ThemeDef) {
   set('--accent', t.acc)
   set('--accent-text', t.light ? mix(t.acc, '#000000', 0.1) : t.acc)
   set('--accent-muted', mix(t.acc, t.bg, 0.82))
+}
+
+// Fully theme-controlled dropdown (native <select> popups ignore CSS on
+// WebKitGTK and render white, so we render our own menu).
+function ThemedSelect({
+  value,
+  options,
+  onChange,
+  valueColor,
+}: {
+  value: string
+  options: Array<{ value: string; label: string }>
+  onChange: (v: string) => void
+  valueColor?: string
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [])
+  const current = options.find(o => o.value === value)
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="rounded-lg"
+        style={{
+          display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'space-between',
+          background: 'var(--bg-secondary)', border: '0.5px solid var(--border-subtle)',
+          color: valueColor || 'var(--text-primary)', fontSize: 12, padding: '7px 10px', cursor: 'pointer', minWidth: 92,
+        }}
+      >
+        <span>{current?.label ?? value}</span>
+        <span style={{ color: 'var(--text-tertiary)', fontSize: 10 }}>▾</span>
+      </button>
+      {open && (
+        <div
+          className="rounded-lg"
+          style={{
+            position: 'absolute', top: 'calc(100% + 4px)', left: 0, minWidth: '100%', zIndex: 100,
+            background: 'var(--bg-secondary)', border: '0.5px solid var(--border-mid)',
+            boxShadow: '0 10px 30px rgba(0,0,0,0.4)', padding: 4, maxHeight: 260, overflowY: 'auto',
+          }}
+        >
+          {options.map(o => (
+            <button
+              key={o.value}
+              type="button"
+              onClick={() => { onChange(o.value); setOpen(false) }}
+              style={{
+                display: 'block', width: '100%', textAlign: 'left', border: 'none',
+                background: o.value === value ? 'var(--bg-tertiary)' : 'transparent',
+                color: 'var(--text-primary)', fontSize: 12, padding: '6px 9px', borderRadius: 6, cursor: 'pointer',
+                fontFamily: "'JetBrains Mono', monospace",
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-tertiary)' }}
+              onMouseLeave={e => { e.currentTarget.style.background = o.value === value ? 'var(--bg-tertiary)' : 'transparent' }}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
 }
 
 type Section =
@@ -1213,9 +1283,11 @@ function PermissionsSection() {
 
       {/* Add-rule form */}
       <div className="flex items-center" style={{ gap: 8, marginBottom: 10 }}>
-        <select value={newTool} onChange={e => setNewTool(e.target.value)} className="rounded-lg" style={{ appearance: 'none', WebkitAppearance: 'none', background: 'var(--bg-secondary)', border: '0.5px solid var(--border-subtle)', color: 'var(--text-primary)', fontSize: 12, padding: '7px 22px 7px 8px' }}>
-          {(defaults.length ? defaults.map(d => d.tool) : ['bash', 'read', 'write', 'edit', 'grep', 'glob', 'webfetch', 'websearch']).map(t => <option key={t} value={t} style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}>{t}</option>)}
-        </select>
+        <ThemedSelect
+          value={newTool}
+          onChange={setNewTool}
+          options={(defaults.length ? defaults.map(d => d.tool) : ['bash', 'read', 'write', 'edit', 'grep', 'glob', 'webfetch', 'websearch']).map(t => ({ value: t, label: t }))}
+        />
         <input
           value={newPattern}
           onChange={e => setNewPattern(e.target.value)}
@@ -1224,11 +1296,16 @@ function PermissionsSection() {
           className="rounded-lg"
           style={{ flex: 1, background: 'var(--bg-secondary)', border: '0.5px solid var(--border-subtle)', color: 'var(--text-primary)', fontSize: 12, padding: '7px 10px', fontFamily: "'JetBrains Mono', monospace" }}
         />
-        <select value={newAction} onChange={e => setNewAction(e.target.value as 'allow' | 'ask' | 'deny')} className="rounded-lg" style={{ appearance: 'none', WebkitAppearance: 'none', background: 'var(--bg-secondary)', border: '0.5px solid var(--border-subtle)', color: actionColor(newAction), fontSize: 12, padding: '7px 22px 7px 8px' }}>
-          <option value="allow" style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}>allow</option>
-          <option value="ask" style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}>ask</option>
-          <option value="deny" style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}>deny</option>
-        </select>
+        <ThemedSelect
+          value={newAction}
+          onChange={v => setNewAction(v as 'allow' | 'ask' | 'deny')}
+          valueColor={actionColor(newAction)}
+          options={[
+            { value: 'allow', label: 'allow' },
+            { value: 'ask', label: 'ask' },
+            { value: 'deny', label: 'deny' },
+          ]}
+        />
         <button onClick={addRule} disabled={!newPattern.trim()} className="rounded-lg" style={{ border: 'none', background: 'var(--accent)', color: '#fff', fontSize: 12, padding: '7px 14px', cursor: newPattern.trim() ? 'pointer' : 'default', opacity: newPattern.trim() ? 1 : 0.5 }}>Add</button>
       </div>
 
