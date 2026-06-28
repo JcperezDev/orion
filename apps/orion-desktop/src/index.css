@@ -5,6 +5,9 @@
 @tailwind utilities;
 
 :root {
+  /* Make native controls (select popups, scrollbars) render dark by default;
+     applyTheme() flips this to 'light' for light themes. */
+  color-scheme: dark;
   /* Orion Dark (default) */
   --bg-primary: #0a0a0c;
   --bg-secondary: #111116;

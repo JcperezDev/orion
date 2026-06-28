@@ -130,6 +130,8 @@ function mix(a: string, b: string, t: number): string {
 }
 function applyTheme(t: ThemeDef) {
   const root = document.documentElement
+  // Drive native controls (select popups, scrollbars) to match the theme.
+  root.style.colorScheme = t.light ? 'light' : 'dark'
   const set = (k: string, v: string) => root.style.setProperty(k, v)
   set('--bg-primary', t.bg)
   set('--bg-secondary', t.side)
