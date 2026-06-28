@@ -5,7 +5,7 @@ import TitleBar from './components/TitleBar'
 import Sidebar from './components/Sidebar'
 import ChatView from './components/ChatView'
 import OnboardingOverlay from './components/OnboardingOverlay'
-import SettingsView from './components/SettingsView'
+import SettingsView, { applyThemeById } from './components/SettingsView'
 import { PermissionDialog } from './components/PermissionDialog'
 import ResizeHandles from './components/ResizeHandles'
 
@@ -92,6 +92,22 @@ export default function App() {
       window.removeEventListener('orion:session', toChat)
       window.removeEventListener('orion:new-session', toChat)
     }
+  }, [])
+
+  // Restore the saved theme from the backend on startup (durable across dev
+  // webview origin changes, where localStorage can be lost).
+  useEffect(() => {
+    invoke<string | null>('get_ui_pref', { key: 'theme' })
+      .then(id => {
+        if (id) {
+          applyThemeById(id)
+        } else {
+          // Migrate the current localStorage theme into the durable store.
+          const local = localStorage.getItem('orion-theme')
+          if (local) invoke('set_ui_pref', { key: 'theme', value: local }).catch(() => {})
+        }
+      })
+      .catch(() => {})
   }, [])
 
   // Select-to-copy: copy any selected text to the clipboard automatically.

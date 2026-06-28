@@ -965,6 +965,21 @@ fn undo_changes(state: State<'_, AppState>, tool_call_id: String) -> Result<Vec<
     Ok(restored)
 }
 
+/// Durable UI preference (theme, language) stored in the shared catalog DB so it
+/// survives restarts regardless of the dev webview origin/port.
+#[tauri::command]
+fn get_ui_pref(state: State<'_, AppState>, key: String) -> Option<String> {
+    state.catalog.get_config(&format!("ui:{key}"))
+}
+
+#[tauri::command]
+fn set_ui_pref(state: State<'_, AppState>, key: String, value: String) -> Result<(), String> {
+    state
+        .catalog
+        .set_config(&format!("ui:{key}"), &value)
+        .map_err(|e| e.to_string())
+}
+
 /// Read the master "full access" switch (Trust Engine off → allow everything).
 #[tauri::command]
 fn get_full_access(state: State<'_, AppState>) -> bool {
@@ -1142,6 +1157,8 @@ fn main() {
             remove_permission_rule,
             get_permissions,
             list_agents,
+            get_ui_pref,
+            set_ui_pref,
             get_full_access,
             set_full_access,
             undo_changes,

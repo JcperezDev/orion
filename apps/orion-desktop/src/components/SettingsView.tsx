@@ -158,6 +158,15 @@ export function applyStoredTheme() {
   } catch { /* ignore */ }
 }
 
+/// Apply a theme by id (used to restore from the backend on startup).
+export function applyThemeById(id: string) {
+  const t = THEMES.find(x => x.id === id)
+  if (t) {
+    applyTheme(t)
+    try { localStorage.setItem('orion-theme', id) } catch { /* ignore */ }
+  }
+}
+
 // Fully theme-controlled dropdown (native <select> popups ignore CSS on
 // WebKitGTK and render white, so we render our own menu).
 function ThemedSelect({
@@ -275,6 +284,7 @@ export default function SettingsView({ onClose }: { onClose?: () => void }) {
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
     localStorage.setItem('orion-theme', theme)
+    invoke('set_ui_pref', { key: 'theme', value: theme }).catch(() => {})
     const t = THEMES.find(x => x.id === theme)
     if (t) applyTheme(t)
   }, [theme])

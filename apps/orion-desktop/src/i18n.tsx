@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react'
+import { invoke } from '@tauri-apps/api/core'
 
 export type Lang =
   | 'en' | 'es' | 'pt' | 'fr' | 'de' | 'it' | 'zh' | 'ja' | 'ko' | 'ru'
@@ -445,6 +446,25 @@ export function LangProvider({ children }: { children: ReactNode }) {
   const setLang = useCallback((l: Lang) => {
     setLangState(l)
     try { localStorage.setItem('orion-lang', l) } catch { /* ignore */ }
+    // Durable copy in the backend DB (survives dev webview origin changes).
+    invoke('set_ui_pref', { key: 'lang', value: l }).catch(() => {})
+  }, [])
+  // Restore from the backend on startup if localStorage was lost/stale; if the
+  // backend has nothing yet, migrate the current (localStorage) value into it.
+  useEffect(() => {
+    invoke<string | null>('get_ui_pref', { key: 'lang' })
+      .then(saved => {
+        if (saved && TRANSLATIONS[saved as Lang]) {
+          if (saved !== lang) {
+            setLangState(saved as Lang)
+            try { localStorage.setItem('orion-lang', saved) } catch { /* ignore */ }
+          }
+        } else {
+          invoke('set_ui_pref', { key: 'lang', value: lang }).catch(() => {})
+        }
+      })
+      .catch(() => {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   // Set document direction for right-to-left languages.
   useEffect(() => {
