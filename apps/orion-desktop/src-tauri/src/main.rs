@@ -487,8 +487,16 @@ async fn send_message(
     session_id: String,
     content: String,
     mode: Option<String>,
+    history: Option<Vec<HistoryMsg>>,
 ) -> Result<String, String> {
     state.cancel_flag.store(false, Ordering::SeqCst);
+    // Prior conversation turns (user/assistant) for multi-turn context.
+    let history: Vec<Message> = history
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|m| (m.role == "user" || m.role == "assistant") && !m.content.trim().is_empty())
+        .map(|m| Message { role: m.role, content: m.content, ..Default::default() })
+        .collect();
 
     let resolved_mode = mode.as_deref().unwrap_or("build");
     let agent_mode = resolved_mode == "agent";
@@ -543,7 +551,8 @@ async fn send_message(
 
     if !agent_mode {
         // Chat-only path (build or plan): stream text and emit orion://token events.
-        let msgs = vec![Message {
+        let mut msgs = history.clone();
+        msgs.push(Message {
             role: "user".to_string(),
             content: if plan_mode {
                 format!("[PLAN MODE]\n{}", content)
@@ -551,7 +560,7 @@ async fn send_message(
                 content.clone()
             },
             ..Default::default()
-        }];
+        });
 
         let mut stream = match state
             .registry
@@ -638,6 +647,8 @@ async fn send_message(
                 ..Default::default()
             });
         }
+        // Prior conversation turns for multi-turn context.
+        messages.extend(history.iter().cloned());
         messages.push(Message {
             role: "user".into(),
             content: content.clone(),
@@ -873,6 +884,13 @@ fn set_full_access(state: State<'_, AppState>, enabled: bool) -> Result<(), Stri
         .catalog
         .set_config("full_access", if enabled { "true" } else { "false" })
         .map_err(|e| e.to_string())
+}
+
+/// A prior conversation turn sent from the frontend for multi-turn context.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct HistoryMsg {
+    pub role: String,
+    pub content: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

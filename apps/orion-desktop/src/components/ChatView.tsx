@@ -50,6 +50,17 @@ export default function ChatView() {
   const [limitInfo, setLimitInfo] = useState<{ message: string; retryAfter: number | null } | null>(null)
   const [retryInfo, setRetryInfo] = useState<{ attempt: number; delaySecs: number } | null>(null)
   const lastSubmitRef = useRef<{ text: string; mode?: string } | null>(null)
+  // Mirror of `messages` so handlers can read the latest history without being
+  // re-created on every message.
+  const messagesRef = useRef<ChatMessage[]>([])
+  useEffect(() => { messagesRef.current = messages }, [messages])
+
+  // Prior user/assistant turns (with text) for multi-turn context.
+  const buildHistory = () =>
+    messagesRef.current
+      .filter(m => (m.role === 'user' || m.role === 'assistant') && !!m.content && !m.isStreaming)
+      .map(m => ({ role: m.role, content: m.content }))
+      .slice(-40) // cap to recent turns to avoid context overflow
 
   // Load active session on mount
   useEffect(() => {
@@ -313,6 +324,8 @@ export default function ChatView() {
       return
     }
 
+    // Capture prior conversation BEFORE pushing the new bubbles.
+    const history = buildHistory()
     // Regular LLM message — echo user + create empty assistant bubble for streaming
     setLimitInfo(null)
     lastSubmitRef.current = { text, mode: payload.mode }
@@ -328,6 +341,7 @@ export default function ChatView() {
         sessionId: activeSession.id,
         content: text,
         mode: payload.mode,
+        history,
       })
     } catch (e) {
       pushError(String(e))
@@ -339,6 +353,11 @@ export default function ChatView() {
   const handleResume = useCallback(async () => {
     const last = lastSubmitRef.current
     if (!activeSession || !last) return
+    // History up to the failed turn — drop the trailing user message we resend.
+    const history = buildHistory()
+    if (history.length && history[history.length - 1].role === 'user' && history[history.length - 1].content === last.text) {
+      history.pop()
+    }
     setLimitInfo(null)
     pushMessage({
       id: genId(), role: 'assistant', content: '', timestamp: nowIso(), isStreaming: true,
@@ -348,6 +367,7 @@ export default function ChatView() {
         sessionId: activeSession.id,
         content: last.text,
         mode: last.mode,
+        history,
       })
     } catch (e) {
       pushError(String(e))
