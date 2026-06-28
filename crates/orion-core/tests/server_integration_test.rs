@@ -283,7 +283,7 @@ async fn models_endpoint_filters_by_query() {
     .unwrap();
     let arr = body.as_array().unwrap();
     for m in arr {
-        assert_eq!(m["providerId"], "anthropic");
+        assert_eq!(m["provider_id"], "anthropic");
     }
 }
 

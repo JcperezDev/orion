@@ -40,3 +40,4 @@ tree-sitter.workspace = true
 tree-sitter-bash.workspace = true
 dashmap = "6"
 tokio-util = { version = "0.7", features = ["rt"] }
+keyring.workspace = true

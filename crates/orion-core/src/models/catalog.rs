@@ -3,6 +3,19 @@ use parking_lot::Mutex;
 use rusqlite::{params, Connection};
 use std::sync::Arc;
 
+/// Service name under which API keys are stored in the OS keyring.
+const KEYRING_SERVICE: &str = "orion";
+
+/// Build a keyring entry for a provider's API key. Returns `None` when no
+/// keyring backend is available (e.g. headless CI), so callers fall back to
+/// the DB. Honors `ORION_DISABLE_KEYRING=1` to force the DB path (tests).
+fn keyring_entry(provider_id: &str) -> Option<keyring::Entry> {
+    if std::env::var("ORION_DISABLE_KEYRING").as_deref() == Ok("1") {
+        return None;
+    }
+    keyring::Entry::new(KEYRING_SERVICE, provider_id).ok()
+}
+
 #[derive(Debug, Clone)]
 pub struct ProviderInfo {
     pub id: String,
@@ -934,7 +947,20 @@ impl ModelCatalog {
         self.get_config(key).as_deref() == Some("true")
     }
 
+    /// Store an API key. Prefers the OS keyring (encrypted, outside the DB);
+    /// falls back to the config table when no keyring is available (CI/headless).
     pub fn save_api_key(&self, provider_id: &str, api_key: &str) -> Result<()> {
+        if let Some(entry) = keyring_entry(provider_id) {
+            if entry.set_password(api_key).is_ok() {
+                // Drop any plaintext copy lingering in the DB.
+                let conn = self.conn.lock();
+                let _ = conn.execute(
+                    "DELETE FROM config WHERE key = ?1",
+                    [format!("api_key:{}", provider_id)],
+                );
+                return Ok(());
+            }
+        }
         let conn = self.conn.lock();
         conn.execute(
             "INSERT OR REPLACE INTO config (key, value) VALUES (?1, ?2)",
@@ -944,15 +970,40 @@ impl ModelCatalog {
     }
 
     pub fn get_api_key(&self, provider_id: &str) -> Option<String> {
-        let conn = self.conn.lock();
-        conn.query_row(
-            "SELECT value FROM config WHERE key = ?1",
-            [format!("api_key:{}", provider_id)],
-            |row| row.get(0),
-        ).ok()
+        // Keyring first.
+        if let Some(entry) = keyring_entry(provider_id) {
+            if let Ok(pw) = entry.get_password() {
+                return Some(pw);
+            }
+        }
+        // DB fallback — and best-effort migrate any plaintext key to the keyring.
+        let db_key: Option<String> = {
+            let conn = self.conn.lock();
+            conn.query_row(
+                "SELECT value FROM config WHERE key = ?1",
+                [format!("api_key:{}", provider_id)],
+                |row| row.get(0),
+            )
+            .ok()
+        };
+        if let Some(ref key) = db_key {
+            if let Some(entry) = keyring_entry(provider_id) {
+                if entry.set_password(key).is_ok() {
+                    let conn = self.conn.lock();
+                    let _ = conn.execute(
+                        "DELETE FROM config WHERE key = ?1",
+                        [format!("api_key:{}", provider_id)],
+                    );
+                }
+            }
+        }
+        db_key
     }
 
     pub fn delete_api_key(&self, provider_id: &str) -> Result<()> {
+        if let Some(entry) = keyring_entry(provider_id) {
+            let _ = entry.delete_credential();
+        }
         let conn = self.conn.lock();
         conn.execute(
             "DELETE FROM config WHERE key = ?1",
