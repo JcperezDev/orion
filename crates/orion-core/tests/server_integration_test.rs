@@ -283,7 +283,7 @@ async fn models_endpoint_filters_by_query() {
     .unwrap();
     let arr = body.as_array().unwrap();
     for m in arr {
-        assert_eq!(m["providerId"], "anthropic");
+        assert_eq!(m["provider_id"], "anthropic");
     }
 }
 
@@ -351,4 +351,85 @@ async fn chat_missing_provider_returns_error() {
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::SERVICE_UNAVAILABLE);
+}
+
+#[tokio::test]
+async fn fork_session_copies_messages() {
+    isolated_db();
+    let app = build_test_app().await;
+
+    // Create a session first
+    let create = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/sessions")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(serde_json::json!({"title": "original"}).to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(create.status(), StatusCode::OK);
+    let session: serde_json::Value =
+        serde_json::from_slice(&axum::body::to_bytes(create.into_body(), usize::MAX).await.unwrap()).unwrap();
+    let original_id = session["id"].as_str().unwrap().to_string();
+
+    // Fork the session
+    let fork = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(&format!("/api/sessions/{original_id}/fork"))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::default())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(fork.status(), StatusCode::OK);
+    let fork_session: serde_json::Value =
+        serde_json::from_slice(&axum::body::to_bytes(fork.into_body(), usize::MAX).await.unwrap()).unwrap();
+    let fork_id = fork_session["id"].as_str().unwrap();
+    assert_ne!(fork_id, &original_id);
+    assert_eq!(fork_session["title"].as_str().unwrap(), "original (fork)");
+
+    // GET the forked session
+    let get = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(&format!("/api/sessions/{fork_id}"))
+                .body(Body::default())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(get.status(), StatusCode::OK);
+    let fetched: serde_json::Value =
+        serde_json::from_slice(&axum::body::to_bytes(get.into_body(), usize::MAX).await.unwrap()).unwrap();
+    assert_eq!(fetched["id"].as_str().unwrap(), fork_id);
+    assert_eq!(fetched["messages"].as_array().unwrap().len(), 0);
+}
+
+#[tokio::test]
+async fn fork_nonexistent_session_returns_404() {
+    isolated_db();
+    let app = build_test_app().await;
+
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/sessions/nonexistent-id/fork")
+                .body(Body::default())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::NOT_FOUND);
 }

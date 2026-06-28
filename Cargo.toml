@@ -4,6 +4,7 @@ members = [
     "crates/orion-core",
     "apps/orion-tui",
     "apps/orion-server",
+    "apps/orion-cli",
     "apps/orion-desktop/src-tauri",
 ] 
 
@@ -33,7 +34,7 @@ thiserror = "1.0"
 once_cell = "1.19"
 parking_lot = "0.12"
 indicatif = "0.17"
-chrono = "0.4"
+chrono = { version = "0.4", features = ["serde"] }
 toml = "0.8"
 futures = "0.3"
 async-trait = "0.1"
@@ -42,8 +43,16 @@ axum = "0.7"
 tower = "0.5"
 tower-http = { version = "0.6", features = ["cors", "trace"] }
 async-stream = "0.3"
+globset = "0.4"
+walkdir = "2.5"
+regex = "1.10"
+scraper = "0.27"
+url = "2.5"
+tree-sitter = "0.24"
+tree-sitter-bash = "0.23"
+keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }
 
-[profile.release] 
+[profile.release]
 opt-level = 3
 lto = true
 codegen-units = 1

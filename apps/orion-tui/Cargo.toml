@@ -11,6 +11,7 @@ crossterm.workspace = true
 tokio.workspace = true
 anyhow.workspace = true
 chrono.workspace = true
+futures.workspace = true
 
 [[bin]]
 name = "orion-agent"

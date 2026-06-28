@@ -15,6 +15,7 @@ fn setup_isolated_db() {
         std::fs::create_dir_all(&tmp).unwrap();
         std::env::set_var("ORION_CATALOG_DB", tmp.join("catalog.db"));
         std::env::set_var("ORION_MEMORY_DB", tmp.join("memory.db"));
+        std::env::set_var("ORION_DISABLE_KEYRING", "1");
     });
 }
 
@@ -407,4 +408,42 @@ fn test_sync_openrouter_missing_key_preserves_existing_models() {
         test_model_still_exists,
         "Test model should still exist after failed sync"
     );
+}
+
+#[test]
+fn test_messages_persist_and_load() {
+    setup_isolated_db();
+    let catalog = ModelCatalog::new().expect("Failed to create catalog");
+    let session = catalog.create_session(Some("chat")).expect("create session");
+
+    catalog.add_message(&session.id, "user", "hello").unwrap();
+    catalog.add_message(&session.id, "assistant", "hi there").unwrap();
+    catalog.add_message(&session.id, "user", "how are you?").unwrap();
+
+    let msgs = catalog.get_messages(&session.id);
+    assert_eq!(msgs.len(), 3);
+    assert_eq!(msgs[0].role, "user");
+    assert_eq!(msgs[0].content, "hello");
+    assert_eq!(msgs[1].role, "assistant");
+    assert_eq!(msgs[2].content, "how are you?");
+
+    // message_count is bumped on the session.
+    let reloaded = catalog.get_session(&session.id).expect("session exists");
+    assert_eq!(reloaded.message_count, 3);
+
+    // Deleting the session removes its messages.
+    catalog.delete_session(&session.id).unwrap();
+    assert!(catalog.get_messages(&session.id).is_empty());
+}
+
+#[test]
+fn test_api_key_db_fallback() {
+    // ORION_DISABLE_KEYRING=1 is set in setup, so this exercises the DB path.
+    setup_isolated_db();
+    let catalog = ModelCatalog::new().expect("Failed to create catalog");
+    assert!(catalog.get_api_key("minimax").is_none());
+    catalog.save_api_key("minimax", "sk-secret-123").unwrap();
+    assert_eq!(catalog.get_api_key("minimax").as_deref(), Some("sk-secret-123"));
+    catalog.delete_api_key("minimax").unwrap();
+    assert!(catalog.get_api_key("minimax").is_none());
 }

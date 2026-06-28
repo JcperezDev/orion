@@ -8,11 +8,18 @@ import {
   Cpu,
   Palette,
   Key,
-  Info,
   Loader2,
   ChevronRight,
   Plug,
+  Database,
+  Bot,
+  Server,
+  Shield,
+  Globe,
+  Keyboard,
+  Settings as SettingsIcon,
 } from 'lucide-react'
+import MCPServerView from './MCPServerView'
 
 interface Provider {
   id: string
@@ -67,10 +74,37 @@ const THEMES: Array<{ id: string; name: string; bg: string; side: string; acc: s
   { id: 'synthwave', name: 'Synthwave', bg: '#262335', side: '#1d1927', acc: '#ff7edb', txt: '#ffffff', brd: '#3b3557' },
 ]
 
-type Section = 'providers' | 'appearance' | 'models' | 'about'
+type Section =
+  | 'general'
+  | 'providers'
+  | 'language'
+  | 'appearance'
+  | 'shortcuts'
+  | 'memory'
+  | 'agents'
+  | 'mcp'
+  | 'models'
+  | 'servers'
+  | 'permissions'
 
-export default function SettingsView() {
-  const [activeSection, setActiveSection] = useState<Section>('providers')
+type SectionGroup = 'GENERAL' | 'INTERFACE' | 'TOOLS' | 'SYSTEM'
+
+interface SectionDef {
+  id: Section
+  label: string
+  icon: any
+  group: SectionGroup
+}
+
+export default function SettingsView({ onClose }: { onClose?: () => void }) {
+  const [activeSection, setActiveSection] = useState<Section>(() => {
+    if (typeof window === 'undefined') return 'providers'
+    const m = window.location.hash.match(/^#settings\/([a-z]+)/)
+    if (m && ['general','providers','language','appearance','shortcuts','memory','agents','mcp','models','servers','permissions'].includes(m[1])) {
+      return m[1] as Section
+    }
+    return 'providers'
+  })
   const [providers, setProviders] = useState<Provider[]>([])
   const [models, setModels] = useState<Model[]>([])
   const [defaultModel, setDefaultModel] = useState<string | null>(null)
@@ -120,7 +154,7 @@ export default function SettingsView() {
   async function handleSaveKey(providerId: string) {
     if (!newKey.trim()) return
     try {
-      await invoke('save_provider_api_key', { providerId, apiKey: newKey.trim() })
+      await invoke('save_provider', { providerId, apiKey: newKey.trim() })
       await invoke('reload_registry')
       setEditingKey(null)
       setNewKey('')
@@ -154,19 +188,29 @@ export default function SettingsView() {
 
   async function handleSetDefault(modelId: string) {
     try {
-      await invoke('set_default_model', { modelId })
+      await invoke('set_active_model', { modelId })
       setDefaultModel(modelId)
     } catch (e) {
       console.error('Set default failed:', e)
     }
   }
 
-  const sections: Array<{ id: Section; label: string; icon: any }> = [
-    { id: 'providers', label: 'Providers', icon: Key },
-    { id: 'models', label: 'Models', icon: Cpu },
-    { id: 'appearance', label: 'Appearance', icon: Palette },
-    { id: 'about', label: 'System', icon: Info },
+  const sections: SectionDef[] = [
+    { id: 'general',     label: 'General',     icon: SettingsIcon, group: 'GENERAL' },
+    { id: 'providers',   label: 'Providers',   icon: Key,          group: 'GENERAL' },
+    { id: 'language',    label: 'Language',    icon: Globe,        group: 'GENERAL' },
+    { id: 'appearance',  label: 'Appearance',  icon: Palette,      group: 'INTERFACE' },
+    { id: 'shortcuts',   label: 'Shortcuts',   icon: Keyboard,     group: 'INTERFACE' },
+    { id: 'memory',      label: 'Memory',      icon: Database,     group: 'TOOLS' },
+    { id: 'agents',      label: 'Agents',      icon: Bot,          group: 'TOOLS' },
+    { id: 'mcp',         label: 'MCP Hub',     icon: Plug,         group: 'TOOLS' },
+    { id: 'models',      label: 'Models',      icon: Cpu,          group: 'TOOLS' },
+    { id: 'servers',     label: 'Servers',     icon: Server,       group: 'SYSTEM' },
+    { id: 'permissions', label: 'Permissions', icon: Shield,       group: 'SYSTEM' },
   ]
+
+  const groups: SectionGroup[] = ['GENERAL', 'INTERFACE', 'TOOLS', 'SYSTEM']
+  const sectionsByGroup = (g: SectionGroup) => sections.filter(s => s.group === g)
 
   if (loading) {
     return (
@@ -180,9 +224,32 @@ export default function SettingsView() {
     <div className="flex h-full">
       {/* Settings nav */}
       <div
-        className="w-[200px] flex-shrink-0 border-r p-3"
+        className="w-[210px] flex-shrink-0 border-r p-3 overflow-y-auto"
         style={{ borderColor: 'var(--border-subtle)' }}
       >
+        <button
+          onClick={() => onClose?.()}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            width: '100%',
+            padding: '7px 10px',
+            marginBottom: 10,
+            border: '0.5px solid var(--border-subtle)',
+            borderRadius: 6,
+            background: 'transparent',
+            color: 'var(--text-secondary)',
+            fontSize: '12px',
+            cursor: 'pointer',
+          }}
+          onMouseEnter={e => { (e.currentTarget.style.background = 'var(--bg-tertiary)'); (e.currentTarget.style.color = 'var(--text-primary)') }}
+          onMouseLeave={e => { (e.currentTarget.style.background = 'transparent'); (e.currentTarget.style.color = 'var(--text-secondary)') }}
+          title="Back to chat (Esc)"
+        >
+          <span style={{ fontSize: 14, lineHeight: 1 }}>←</span>
+          <span>Back to chat</span>
+        </button>
         <div
           className="px-2 mb-3"
           style={{
@@ -196,44 +263,62 @@ export default function SettingsView() {
         >
           Settings
         </div>
-        <ul className="space-y-0.5">
-          {sections.map((s) => {
-            const Icon = s.icon
-            return (
-              <li
-                key={s.id}
-                role="button"
-                tabIndex={0}
-                onClick={() => setActiveSection(s.id)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault()
-                    setActiveSection(s.id)
-                  }
-                }}
-                className="flex cursor-pointer items-center gap-2.5 rounded-md outline-none transition"
-                style={{
-                  padding: '7px 10px',
-                  margin: '1px 6px',
-                  fontSize: '12px',
-                  background: activeSection === s.id ? 'var(--bg-tertiary)' : 'transparent',
-                  color: activeSection === s.id ? 'var(--text-primary)' : 'var(--text-secondary)',
-                }}
-              >
-                <Icon
-                  className="size-3.5"
-                  style={{ color: activeSection === s.id ? 'var(--accent)' : 'var(--text-tertiary)' }}
-                />
-                <span className="flex-1">{s.label}</span>
-                {activeSection === s.id && <ChevronRight className="size-3" style={{ color: 'var(--text-tertiary)' }} />}
-              </li>
-            )
-          })}
-        </ul>
+        {groups.map(g => (
+          <div key={g} style={{ marginBottom: 10 }}>
+            <div
+              style={{
+                padding: '6px 12px 4px',
+                fontFamily: "'JetBrains Mono', monospace",
+                fontSize: '9px',
+                letterSpacing: '0.12em',
+                color: 'var(--text-tertiary)',
+                textTransform: 'uppercase',
+                fontWeight: 600,
+              }}
+            >
+              {g}
+            </div>
+            <ul className="space-y-0.5">
+              {sectionsByGroup(g).map(s => {
+                const Icon = s.icon
+                return (
+                  <li
+                    key={s.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setActiveSection(s.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        setActiveSection(s.id)
+                      }
+                    }}
+                    className="flex cursor-pointer items-center gap-2.5 rounded-md outline-none transition"
+                    style={{
+                      padding: '7px 10px',
+                      margin: '1px 6px',
+                      fontSize: '12px',
+                      background: activeSection === s.id ? 'var(--bg-tertiary)' : 'transparent',
+                      color: activeSection === s.id ? 'var(--text-primary)' : 'var(--text-secondary)',
+                    }}
+                  >
+                    <Icon
+                      className="size-3.5"
+                      style={{ color: activeSection === s.id ? 'var(--accent)' : 'var(--text-tertiary)' }}
+                    />
+                    <span className="flex-1">{s.label}</span>
+                    {activeSection === s.id && <ChevronRight className="size-3" style={{ color: 'var(--text-tertiary)' }} />}
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+        ))}
       </div>
 
       {/* Settings content */}
       <div className="flex-1 overflow-y-auto" style={{ padding: '26px 30px' }}>
+        {activeSection === 'general' && <GeneralSection />}
         {activeSection === 'providers' && (
           <ProvidersSection
             providers={providers}
@@ -248,6 +333,14 @@ export default function SettingsView() {
             onSync={handleSync}
           />
         )}
+        {activeSection === 'language' && <LanguageSection />}
+        {activeSection === 'appearance' && (
+          <AppearanceSection theme={theme} onThemeChange={setTheme} />
+        )}
+        {activeSection === 'shortcuts' && <ShortcutsSection />}
+        {activeSection === 'memory' && <MemorySection />}
+        {activeSection === 'agents' && <AgentsSection />}
+        {activeSection === 'mcp' && <MCPServerView />}
         {activeSection === 'models' && (
           <ModelsSection
             models={models}
@@ -258,10 +351,8 @@ export default function SettingsView() {
             providers={providers}
           />
         )}
-        {activeSection === 'appearance' && (
-          <AppearanceSection theme={theme} onThemeChange={setTheme} />
-        )}
-        {activeSection === 'about' && <AboutSection />}
+        {activeSection === 'servers' && <ServersSection />}
+        {activeSection === 'permissions' && <PermissionsSection />}
       </div>
     </div>
   )
@@ -750,7 +841,7 @@ function AboutSection() {
 
   return (
     <div>
-      <SectionTitle>System</SectionTitle>
+      <SectionTitle>General</SectionTitle>
 
       <div
         className="rounded-lg"
@@ -760,6 +851,15 @@ function AboutSection() {
           padding: '16px 20px',
         }}
       >
+        <Row label="Auto-launch on startup">
+          <input type="checkbox" disabled />
+        </Row>
+        <Row label="Check for updates">
+          <input type="checkbox" defaultChecked disabled />
+        </Row>
+        <Row label="Send anonymous telemetry">
+          <input type="checkbox" disabled />
+        </Row>
         <Row label="Version">
           <span style={{ fontSize: '12px', fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-primary)' }}>
             {appInfo?.version || '0.1.0'}
@@ -767,12 +867,7 @@ function AboutSection() {
         </Row>
         <Row label="Platform">
           <span style={{ fontSize: '12px', fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-primary)' }}>
-            {appInfo?.platform || 'unknown'}
-          </span>
-        </Row>
-        <Row label="Architecture">
-          <span style={{ fontSize: '12px', fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-primary)' }}>
-            {appInfo?.arch || 'unknown'}
+            {appInfo?.platform || 'unknown'} · {appInfo?.arch || '?'}
           </span>
         </Row>
         <Row label="Renderer">
@@ -806,6 +901,312 @@ function AboutSection() {
           {' '}and never leave your machine.
         </p>
       </div>
+    </div>
+  )
+}
+
+function GeneralSection() {
+  return <AboutSection />
+}
+
+function LanguageSection() {
+  const [lang, setLang] = useState(() => localStorage.getItem('orion-lang') ?? 'en')
+  useEffect(() => {
+    localStorage.setItem('orion-lang', lang)
+  }, [lang])
+
+  return (
+    <div>
+      <SectionTitle>Language</SectionTitle>
+      <div
+        className="rounded-lg"
+        style={{ background: 'var(--bg-secondary)', border: '0.5px solid var(--border-subtle)', padding: '4px 8px' }}
+      >
+        {[
+          { id: 'en', label: 'English', hint: 'default' },
+          { id: 'es', label: 'Español' },
+          { id: 'pt', label: 'Português' },
+          { id: 'zh', label: '中文' },
+        ].map(l => (
+          <label
+            key={l.id}
+            className="flex items-center justify-between cursor-pointer"
+            style={{ padding: '11px 12px', borderBottom: '0.5px solid var(--border-subtle)' }}
+          >
+            <div>
+              <div style={{ fontSize: '13px', color: 'var(--text-primary)' }}>{l.label}</div>
+              {l.hint && <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginTop: 2 }}>{l.hint}</div>}
+            </div>
+            <input
+              type="radio"
+              name="lang"
+              checked={lang === l.id}
+              onChange={() => setLang(l.id)}
+              style={{ accentColor: 'var(--accent)' }}
+            />
+          </label>
+        ))}
+      </div>
+      <p className="mt-3" style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>
+        Language changes UI strings only. LLM responses follow the system prompt regardless.
+      </p>
+    </div>
+  )
+}
+
+function ShortcutsSection() {
+  const shortcuts: Array<{ keys: string[]; desc: string }> = [
+    { keys: ['Ctrl', ','], desc: 'Open Settings' },
+    { keys: ['Esc'], desc: 'Close Settings' },
+    { keys: ['Enter'], desc: 'Send message' },
+    { keys: ['Shift', 'Enter'], desc: 'New line in input' },
+    { keys: ['Ctrl', 'N'], desc: 'New session' },
+    { keys: ['Ctrl', 'K'], desc: 'Search / command palette' },
+  ]
+  return (
+    <div>
+      <SectionTitle>Shortcuts</SectionTitle>
+      <div
+        className="rounded-lg"
+        style={{ background: 'var(--bg-secondary)', border: '0.5px solid var(--border-subtle)' }}
+      >
+        {shortcuts.map((s, i) => (
+          <div
+            key={i}
+            className="flex items-center justify-between"
+            style={{ padding: '11px 14px', borderBottom: i < shortcuts.length - 1 ? '0.5px solid var(--border-subtle)' : 'none' }}
+          >
+            <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>{s.desc}</span>
+            <div className="flex items-center gap-1">
+              {s.keys.map((k, j) => (
+                <span
+                  key={j}
+                  style={{
+                    fontFamily: "'JetBrains Mono', monospace",
+                    fontSize: '11px',
+                    color: 'var(--text-primary)',
+                    background: 'var(--bg-tertiary)',
+                    border: '0.5px solid var(--border-mid)',
+                    borderRadius: 4,
+                    padding: '2px 7px',
+                  }}
+                >
+                  {k}
+                </span>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function MemorySection() {
+  return (
+    <PlaceholderSection
+      title="Memory"
+      description="Persistent memory store. Memories survive across sessions and are auto-injected into relevant conversations."
+      bullets={[
+        'Storage: ~/.config/orion/memory.db (SQLite)',
+        'Auto-recall: enabled',
+        'Token budget: 2000 per turn',
+      ]}
+    />
+  )
+}
+
+function AgentsSection() {
+  return (
+    <PlaceholderSection
+      title="Agents"
+      description="Multi-agent system. Each agent has its own role, prompt and toolset."
+      bullets={[
+        'Default agent: orion-general',
+        'Plan agent: read-only research mode',
+        'Build agent: read-write execution mode',
+      ]}
+    />
+  )
+}
+
+function ServersSection() {
+  return (
+    <PlaceholderSection
+      title="Servers"
+      description="Backend HTTP server (orion-server on port 7337) for external integrations."
+      bullets={[
+        'HTTP server: bundled (orion-server binary)',
+        'Default port: 7337',
+        'Status: managed by the desktop app',
+      ]}
+    />
+  )
+}
+
+function PermissionsSection() {
+  const [rules] = useState<Array<{ pattern: string; decision: 'allow' | 'deny' }>>([
+    { pattern: 'shell.run:git status', decision: 'allow' },
+    { pattern: 'shell.run:rm -rf *', decision: 'deny' },
+  ])
+  const [fullAccess, setFullAccess] = useState(false)
+  const [loadingFa, setLoadingFa] = useState(true)
+
+  useEffect(() => {
+    invoke<boolean>('get_full_access')
+      .then((v) => setFullAccess(v))
+      .catch(() => {})
+      .finally(() => setLoadingFa(false))
+  }, [])
+
+  const toggleFullAccess = async () => {
+    const next = !fullAccess
+    setFullAccess(next)
+    try {
+      await invoke('set_full_access', { enabled: next })
+    } catch {
+      setFullAccess(!next) // revert on failure
+    }
+  }
+
+  return (
+    <div>
+      <SectionTitle>Permissions</SectionTitle>
+
+      {/* Master "full access" switch */}
+      <div
+        className="rounded-lg flex items-center justify-between"
+        style={{
+          background: fullAccess ? 'var(--red-bg)' : 'var(--bg-secondary)',
+          border: `0.5px solid ${fullAccess ? 'var(--red)' : 'var(--border-subtle)'}`,
+          padding: '14px 16px',
+          marginBottom: 16,
+        }}
+      >
+        <div style={{ marginRight: 16 }}>
+          <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>
+            Full access mode
+          </div>
+          <div style={{ fontSize: '11px', color: fullAccess ? 'var(--red-text)' : 'var(--text-secondary)', lineHeight: 1.5 }}>
+            {fullAccess
+              ? '⚠ Every tool runs with no prompts — rm, curl, and writes to /etc, /home, /tmp are all allowed.'
+              : 'Off: the Trust Engine auto-allows safe, reversible actions and only asks before risky ones.'}
+          </div>
+        </div>
+        <button
+          role="switch"
+          aria-checked={fullAccess}
+          aria-label="Toggle full access mode"
+          disabled={loadingFa}
+          onClick={toggleFullAccess}
+          style={{
+            flexShrink: 0,
+            width: 44,
+            height: 26,
+            borderRadius: 20,
+            border: 'none',
+            cursor: loadingFa ? 'default' : 'pointer',
+            background: fullAccess ? 'var(--red)' : 'var(--border-strong, #555)',
+            position: 'relative',
+            transition: 'background 0.15s ease',
+          }}
+        >
+          <span
+            style={{
+              position: 'absolute',
+              top: 3,
+              left: fullAccess ? 21 : 3,
+              width: 20,
+              height: 20,
+              borderRadius: '50%',
+              background: '#fff',
+              transition: 'left 0.15s ease',
+            }}
+          />
+        </button>
+      </div>
+
+      <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: 12 }}>
+        Tool calls matching these patterns are auto-approved or denied without prompting.
+      </p>
+      <div
+        className="rounded-lg"
+        style={{ background: 'var(--bg-secondary)', border: '0.5px solid var(--border-subtle)' }}
+      >
+        {rules.length === 0 ? (
+          <div className="text-center" style={{ padding: '24px 16px', color: 'var(--text-tertiary)', fontSize: '12px' }}>
+            No rules yet. Tool calls will prompt for approval by default.
+          </div>
+        ) : (
+          rules.map((r, i) => (
+            <div
+              key={i}
+              className="flex items-center justify-between"
+              style={{ padding: '11px 14px', borderBottom: i < rules.length - 1 ? '0.5px solid var(--border-subtle)' : 'none' }}
+            >
+              <code style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '12px', color: 'var(--text-primary)' }}>
+                {r.pattern}
+              </code>
+              <span
+                style={{
+                  fontFamily: "'JetBrains Mono', monospace",
+                  fontSize: '10px',
+                  letterSpacing: '0.08em',
+                  textTransform: 'uppercase',
+                  color: r.decision === 'allow' ? 'var(--green-text)' : 'var(--red-text)',
+                  background: r.decision === 'allow' ? 'var(--green-bg)' : 'var(--red-bg)',
+                  border: `0.5px solid ${r.decision === 'allow' ? 'var(--green)' : 'var(--red)'}`,
+                  borderRadius: 20,
+                  padding: '2px 8px',
+                }}
+              >
+                {r.decision}
+              </span>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  )
+}
+
+function PlaceholderSection({
+  title,
+  description,
+  bullets,
+}: {
+  title: string
+  description: string
+  bullets: string[]
+}) {
+  return (
+    <div>
+      <SectionTitle>{title}</SectionTitle>
+      <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: 12, lineHeight: 1.6 }}>
+        {description}
+      </p>
+      <div
+        className="rounded-lg"
+        style={{ background: 'var(--bg-secondary)', border: '0.5px solid var(--border-subtle)', padding: '14px 18px' }}
+      >
+        {bullets.map((b, i) => (
+          <div
+            key={i}
+            style={{
+              fontSize: '12px',
+              color: 'var(--text-secondary)',
+              padding: '6px 0',
+              borderBottom: i < bullets.length - 1 ? '0.5px solid var(--border-subtle)' : 'none',
+              fontFamily: "'JetBrains Mono', monospace",
+            }}
+          >
+            {b}
+          </div>
+        ))}
+      </div>
+      <p className="mt-3" style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>
+        UI shell ready · backend wiring pending.
+      </p>
     </div>
   )
 }

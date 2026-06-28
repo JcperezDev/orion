@@ -1,3 +1,2 @@
-pub mod image;
-pub mod manager;
-pub mod middleware;
+pub mod client;
+pub mod protocol;

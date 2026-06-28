@@ -1,0 +1,4 @@
+# Allow somewhat larger types/functions before warning — this is an
+# application, not a library with strict API ergonomics requirements.
+too-many-arguments-threshold = 10
+type-complexity-threshold = 500

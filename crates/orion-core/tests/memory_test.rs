@@ -118,6 +118,7 @@ async fn memory_inject_context_no_summary_is_noop() {
     let mut msgs = vec![orion_core::providers::Message {
         role: "user".into(),
         content: "hi".into(),
+        ..Default::default()
     }];
     store.inject_context(&sid, &mut msgs).await;
     assert_eq!(msgs.len(), 1);

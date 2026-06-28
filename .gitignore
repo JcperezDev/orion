@@ -15,3 +15,4 @@
 .tmp
 /tmp
 *.swp
+**/node_modules/.vite

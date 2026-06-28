@@ -3,6 +3,19 @@ use parking_lot::Mutex;
 use rusqlite::{params, Connection};
 use std::sync::Arc;
 
+/// Service name under which API keys are stored in the OS keyring.
+const KEYRING_SERVICE: &str = "orion";
+
+/// Build a keyring entry for a provider's API key. Returns `None` when no
+/// keyring backend is available (e.g. headless CI), so callers fall back to
+/// the DB. Honors `ORION_DISABLE_KEYRING=1` to force the DB path (tests).
+fn keyring_entry(provider_id: &str) -> Option<keyring::Entry> {
+    if std::env::var("ORION_DISABLE_KEYRING").as_deref() == Ok("1") {
+        return None;
+    }
+    keyring::Entry::new(KEYRING_SERVICE, provider_id).ok()
+}
+
 #[derive(Debug, Clone)]
 pub struct ProviderInfo {
     pub id: String,
@@ -97,6 +110,23 @@ pub struct ModelSource {
     pub last_error: Option<String>,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Session {
+    pub id: String,
+    pub title: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub message_count: i64,
+    pub active_model: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct StoredMessage {
+    pub role: String,
+    pub content: String,
+    pub created_at: String,
+}
+
 pub struct ModelCatalog {
     conn: Arc<Mutex<Connection>>,
 }
@@ -164,8 +194,27 @@ impl ModelCatalog {
                 value TEXT
             );
 
+            CREATE TABLE IF NOT EXISTS sessions (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL DEFAULT 'New session',
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                message_count INTEGER NOT NULL DEFAULT 0,
+                active_model TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
             CREATE INDEX IF NOT EXISTS idx_models_provider ON models(provider_id);
             CREATE INDEX IF NOT EXISTS idx_models_rank ON models(rank_overall);
+            CREATE INDEX IF NOT EXISTS idx_sessions_updated ON sessions(updated_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, id);
             "#,
         )?;
 
@@ -184,6 +233,7 @@ impl ModelCatalog {
 
         catalog.run_migrations()?;
         catalog.init_default_providers()?;
+        catalog.seed_default_models()?;
         catalog.init_default_sources()?;
         Ok(catalog)
     }
@@ -267,6 +317,24 @@ impl ModelCatalog {
                 [],
             )?;
             conn.execute("INSERT INTO provider_migrations (version) VALUES (2)", [])?;
+        }
+
+        if version < 3 {
+            conn.execute(
+                r#"
+                CREATE TABLE IF NOT EXISTS sessions (
+                    id TEXT PRIMARY KEY,
+                    title TEXT NOT NULL DEFAULT 'New session',
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    message_count INTEGER NOT NULL DEFAULT 0,
+                    active_model TEXT
+                );
+                CREATE INDEX IF NOT EXISTS idx_sessions_updated ON sessions(updated_at DESC);
+                "#,
+                [],
+            )?;
+            conn.execute("INSERT INTO provider_migrations (version) VALUES (3)", [])?;
         }
 
         Ok(())
@@ -445,6 +513,41 @@ impl ModelCatalog {
             )?;
         }
 
+        Ok(())
+    }
+
+    /// Seed one sensible default model per built-in provider so a freshly
+    /// connected provider is immediately usable (the model menu is never empty
+    /// and `send_message` can auto-select). OpenRouter/Ollama are skipped — they
+    /// populate via sync / local discovery. Idempotent (INSERT OR IGNORE).
+    fn seed_default_models(&self) -> Result<()> {
+        // (provider_id, model_id, display_name, context_window)
+        let defaults: &[(&str, &str, &str, i64)] = &[
+            ("minimax", "MiniMax-Text-01", "MiniMax Text 01", 1_000_000),
+            ("openai", "gpt-4o-mini", "GPT-4o mini", 128_000),
+            ("anthropic", "claude-3-5-sonnet-20241022", "Claude 3.5 Sonnet", 200_000),
+            ("deepseek", "deepseek-chat", "DeepSeek Chat", 64_000),
+            ("google", "gemini-2.0-flash", "Gemini 2.0 Flash", 1_000_000),
+            ("groq", "llama-3.3-70b-versatile", "Llama 3.3 70B", 128_000),
+            ("mistral", "mistral-large-latest", "Mistral Large", 128_000),
+            ("together", "meta-llama/Llama-3.3-70B-Instruct-Turbo", "Llama 3.3 70B Turbo", 128_000),
+            ("perplexity", "sonar", "Sonar", 128_000),
+            ("qwen", "qwen-plus", "Qwen Plus", 131_000),
+            ("kimi", "moonshot-v1-32k", "Kimi (Moonshot v1 32k)", 32_000),
+            ("ernie", "ernie-4.0-8k", "ERNIE 4.0", 8_000),
+            ("hunyuan", "hunyuan-pro", "Hunyuan Pro", 32_000),
+        ];
+
+        let conn = self.conn.lock();
+        for (provider_id, model_id, display_name, ctx) in defaults {
+            let full_id = format!("{}:{}", provider_id, model_id);
+            conn.execute(
+                "INSERT OR IGNORE INTO models \
+                 (id, provider_id, model_id, display_name, context_window, supports_tools, enabled, is_available) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, 1, 1, 1)",
+                params![full_id, provider_id, model_id, display_name, ctx],
+            )?;
+        }
         Ok(())
     }
 
@@ -738,6 +841,32 @@ impl ModelCatalog {
         self.add_model(&model)
     }
 
+    /// Pick a usable model from a connected provider (has an API key or is
+    /// ollama), preferring tool-capable models. Used to auto-select a model so
+    /// a connected provider is chattable without manual selection.
+    pub fn pick_connected_model(&self) -> Option<ModelInfo> {
+        let connected: std::collections::HashSet<String> = self
+            .list_providers()
+            .into_iter()
+            .filter(|p| {
+                p.id == "ollama"
+                    || self.get_api_key(&p.id).is_some()
+                    || p.api_key_env
+                        .as_ref()
+                        .and_then(|k| std::env::var(k).ok())
+                        .is_some()
+            })
+            .map(|p| p.id)
+            .collect();
+        let mut candidates: Vec<ModelInfo> = self
+            .list_models(None)
+            .into_iter()
+            .filter(|m| connected.contains(&m.provider_id) && m.is_available)
+            .collect();
+        candidates.sort_by_key(|m| !m.supports_tools);
+        candidates.into_iter().next()
+    }
+
     pub fn get_default_model(&self) -> Option<ModelInfo> {
         let conn = self.conn.lock();
         if let Ok(full_id) = conn.query_row(
@@ -819,7 +948,45 @@ impl ModelCatalog {
         rows.filter_map(|r| r.ok()).collect()
     }
 
+    /// Generic key/value config, shared across CLI + desktop (same DB).
+    pub fn set_config(&self, key: &str, value: &str) -> Result<()> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "INSERT OR REPLACE INTO config (key, value) VALUES (?1, ?2)",
+            params![key, value],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_config(&self, key: &str) -> Option<String> {
+        let conn = self.conn.lock();
+        conn.query_row(
+            "SELECT value FROM config WHERE key = ?1",
+            [key],
+            |row| row.get(0),
+        )
+        .ok()
+    }
+
+    /// Read a boolean config flag (e.g. the `full_access` master switch).
+    pub fn get_bool_config(&self, key: &str) -> bool {
+        self.get_config(key).as_deref() == Some("true")
+    }
+
+    /// Store an API key. Prefers the OS keyring (encrypted, outside the DB);
+    /// falls back to the config table when no keyring is available (CI/headless).
     pub fn save_api_key(&self, provider_id: &str, api_key: &str) -> Result<()> {
+        if let Some(entry) = keyring_entry(provider_id) {
+            if entry.set_password(api_key).is_ok() {
+                // Drop any plaintext copy lingering in the DB.
+                let conn = self.conn.lock();
+                let _ = conn.execute(
+                    "DELETE FROM config WHERE key = ?1",
+                    [format!("api_key:{}", provider_id)],
+                );
+                return Ok(());
+            }
+        }
         let conn = self.conn.lock();
         conn.execute(
             "INSERT OR REPLACE INTO config (key, value) VALUES (?1, ?2)",
@@ -829,12 +996,46 @@ impl ModelCatalog {
     }
 
     pub fn get_api_key(&self, provider_id: &str) -> Option<String> {
+        // Keyring first.
+        if let Some(entry) = keyring_entry(provider_id) {
+            if let Ok(pw) = entry.get_password() {
+                return Some(pw);
+            }
+        }
+        // DB fallback — and best-effort migrate any plaintext key to the keyring.
+        let db_key: Option<String> = {
+            let conn = self.conn.lock();
+            conn.query_row(
+                "SELECT value FROM config WHERE key = ?1",
+                [format!("api_key:{}", provider_id)],
+                |row| row.get(0),
+            )
+            .ok()
+        };
+        if let Some(ref key) = db_key {
+            if let Some(entry) = keyring_entry(provider_id) {
+                if entry.set_password(key).is_ok() {
+                    let conn = self.conn.lock();
+                    let _ = conn.execute(
+                        "DELETE FROM config WHERE key = ?1",
+                        [format!("api_key:{}", provider_id)],
+                    );
+                }
+            }
+        }
+        db_key
+    }
+
+    pub fn delete_api_key(&self, provider_id: &str) -> Result<()> {
+        if let Some(entry) = keyring_entry(provider_id) {
+            let _ = entry.delete_credential();
+        }
         let conn = self.conn.lock();
-        conn.query_row(
-            "SELECT value FROM config WHERE key = ?1",
+        conn.execute(
+            "DELETE FROM config WHERE key = ?1",
             [format!("api_key:{}", provider_id)],
-            |row| row.get(0),
-        ).ok()
+        )?;
+        Ok(())
     }
 
     pub fn set_provider_enabled(&self, provider_id: &str, enabled: bool) -> Result<()> {
@@ -842,6 +1043,156 @@ impl ModelCatalog {
         conn.execute(
             "UPDATE providers SET enabled = ?1 WHERE id = ?2",
             params![enabled as i32, provider_id],
+        )?;
+        Ok(())
+    }
+
+    fn row_to_session(row: &rusqlite::Row) -> rusqlite::Result<Session> {
+        Ok(Session {
+            id: row.get(0)?,
+            title: row.get(1)?,
+            created_at: row.get(2)?,
+            updated_at: row.get(3)?,
+            message_count: row.get(4)?,
+            active_model: row.get(5)?,
+        })
+    }
+
+    pub fn list_sessions(&self) -> Vec<Session> {
+        let conn = self.conn.lock();
+        let mut stmt = match conn.prepare(
+            "SELECT id, title, created_at, updated_at, message_count, active_model FROM sessions ORDER BY updated_at DESC"
+        ) {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
+        stmt.query_map([], Self::row_to_session)
+            .map(|rows| rows.filter_map(|r| r.ok()).collect())
+            .unwrap_or_default()
+    }
+
+    pub fn get_session(&self, id: &str) -> Option<Session> {
+        let conn = self.conn.lock();
+        conn.query_row(
+            "SELECT id, title, created_at, updated_at, message_count, active_model FROM sessions WHERE id = ?1",
+            [id],
+            Self::row_to_session,
+        )
+        .ok()
+    }
+
+    /// Best-effort: list messages for a session.
+    ///
+    /// The catalog schema does not store full message transcripts (those live
+    /// in `MemoryStore`). This method returns `None` when the catalog can't
+    /// supply them, so callers can fall back to the memory store.
+    pub fn list_messages_for_session(
+        &self,
+        _session_id: &str,
+    ) -> Option<Vec<(String, String, Option<String>, Option<String>)>> {
+        None
+    }
+
+    pub fn create_session(&self, title: Option<&str>) -> Result<Session> {
+        let id = uuid::Uuid::new_v4().to_string();
+        let title = title.unwrap_or("New session");
+        let conn = self.conn.lock();
+        conn.execute(
+            "INSERT INTO sessions (id, title) VALUES (?1, ?2)",
+            params![&id, title],
+        )?;
+        drop(conn);
+        Ok(self
+            .get_session(&id)
+            .unwrap_or(Session {
+                id: id.clone(),
+                title: title.to_string(),
+                created_at: String::new(),
+                updated_at: String::new(),
+                message_count: 0,
+                active_model: None,
+            }))
+    }
+
+    pub fn delete_session(&self, id: &str) -> Result<()> {
+        let conn = self.conn.lock();
+        conn.execute("DELETE FROM messages WHERE session_id = ?1", [id])?;
+        conn.execute("DELETE FROM sessions WHERE id = ?1", [id])?;
+        Ok(())
+    }
+
+    /// Persist a chat message and bump the session's counter/timestamp.
+    pub fn add_message(&self, session_id: &str, role: &str, content: &str) -> Result<()> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "INSERT INTO messages (session_id, role, content) VALUES (?1, ?2, ?3)",
+            params![session_id, role, content],
+        )?;
+        conn.execute(
+            "UPDATE sessions SET message_count = message_count + 1, updated_at = datetime('now') WHERE id = ?1",
+            [session_id],
+        )?;
+        Ok(())
+    }
+
+    /// Load a session's messages in chronological order.
+    pub fn get_messages(&self, session_id: &str) -> Vec<StoredMessage> {
+        let conn = self.conn.lock();
+        let mut stmt = match conn.prepare(
+            "SELECT role, content, created_at FROM messages WHERE session_id = ?1 ORDER BY id ASC",
+        ) {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
+        let rows = stmt.query_map([session_id], |row| {
+            Ok(StoredMessage {
+                role: row.get(0)?,
+                content: row.get(1)?,
+                created_at: row.get(2)?,
+            })
+        });
+        match rows {
+            Ok(r) => r.filter_map(|m| m.ok()).collect(),
+            Err(_) => Vec::new(),
+        }
+    }
+
+    pub fn rename_session(&self, id: &str, title: &str) -> Result<()> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "UPDATE sessions SET title = ?1, updated_at = datetime('now') WHERE id = ?2",
+            params![title, id],
+        )?;
+        Ok(())
+    }
+
+    pub fn touch_session(&self, id: &str) -> Result<()> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "UPDATE sessions SET updated_at = datetime('now') WHERE id = ?1",
+            [id],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_active_session(&self) -> Option<Session> {
+        let conn = self.conn.lock();
+        let id: Option<String> = conn
+            .query_row(
+                "SELECT value FROM config WHERE key = 'active_session'",
+                [],
+                |row| row.get(0),
+            )
+            .ok();
+        drop(conn);
+        id.and_then(|sid| self.get_session(&sid))
+    }
+
+    pub fn set_active_session(&self, id: &str) -> Result<()> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "INSERT OR REPLACE INTO config (key, value) VALUES ('active_session', ?1)",
+            [id],
         )?;
         Ok(())
     }

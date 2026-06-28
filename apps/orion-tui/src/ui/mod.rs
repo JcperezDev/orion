@@ -56,5 +56,5 @@ pub fn render(f: &mut Frame, app: &App) {
 
     sidebar::render(f, &app.state, sidebar_area, &theme);
 
-    input::render(f, &app.state.input_buffer, input_area, &theme);
+    input::render(f, &app.state, input_area, &theme);
 }

@@ -87,6 +87,10 @@ impl ProviderRegistry {
         self.providers.lock().contains_key(id)
     }
 
+    pub fn remove_provider(&self, id: &str) {
+        self.providers.lock().remove(id);
+    }
+
     pub fn catalog(&self) -> &ModelCatalog {
         &self.catalog
     }

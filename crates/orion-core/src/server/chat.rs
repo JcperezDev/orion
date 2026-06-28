@@ -103,6 +103,7 @@ pub async fn post_chat(
         .map(|h| Message {
             role: h.role,
             content: h.content,
+            ..Default::default()
         })
         .collect();
 
@@ -114,6 +115,7 @@ pub async fn post_chat(
     messages.push(Message {
         role: "user".into(),
         content: body.message.clone(),
+        ..Default::default()
     });
 
     let request = ChatRequest {

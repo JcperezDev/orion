@@ -5,6 +5,7 @@ pub mod models;
 pub mod providers;
 pub mod sessions;
 pub mod settings;
+pub mod web;
 
 use crate::memory::MemoryStore;
 use crate::middleware::TokenOptimizer;
@@ -30,13 +31,20 @@ pub fn build_router(state: AppState) -> Router {
         .allow_headers(Any);
 
     Router::new()
+        .route("/", get(web::index))
         .route("/health", get(health))
+        .route("/api/health", get(web::health_json))
+        .route("/api/info", get(web::info))
         .route("/api/chat", post(chat::post_chat))
         .route("/api/stream/:session_id", get(chat::get_stream))
         .route("/api/sessions", get(sessions::list).post(sessions::create))
         .route(
             "/api/sessions/:id",
             get(sessions::get).delete(sessions::delete),
+        )
+        .route(
+            "/api/sessions/:id/fork",
+            axum::routing::post(sessions::fork),
         )
         .route(
             "/api/sessions/:id/summarize",

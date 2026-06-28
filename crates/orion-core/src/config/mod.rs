@@ -19,59 +19,6 @@ pub struct McpServerConfig {
     pub enabled: bool,
 }
 
-#[derive(Debug, Clone, Default)]
-#[allow(dead_code)]
-pub enum Provider {
-    #[default]
-    Anthropic,
-    OpenAI,
-    OpenRouter,
-    Ollama,
-}
-
-#[allow(dead_code)]
-impl Provider {
-    pub fn from_str(s: &str) -> Self {
-        match s.to_lowercase().as_str() {
-            "openai" | "gpt" => Provider::OpenAI,
-            "openrouter" => Provider::OpenRouter,
-            "ollama" | "local" => Provider::Ollama,
-            _ => Provider::Anthropic,
-        }
-    }
-
-    pub fn api_key_env(&self) -> &str {
-        match self {
-            Provider::Anthropic => "ANTHROPIC_API_KEY",
-            Provider::OpenAI => "OPENAI_API_KEY",
-            Provider::OpenRouter => "OPENROUTER_API_KEY",
-            Provider::Ollama => "OLLAMA_API_KEY",
-        }
-    }
-
-    pub fn default_url(&self) -> &str {
-        match self {
-            Provider::Anthropic => "https://api.anthropic.com/v1/messages",
-            Provider::OpenAI => "https://api.openai.com/v1/chat/completions",
-            Provider::OpenRouter => "https://openrouter.ai/api/v1/chat/completions",
-            Provider::Ollama => "http://localhost:11434/api/chat",
-        }
-    }
-
-    pub fn default_model(&self) -> &str {
-        match self {
-            Provider::Anthropic => "claude-3-5-sonnet-20241022",
-            Provider::OpenAI => "gpt-4o",
-            Provider::OpenRouter => "anthropic/claude-3.5-sonnet",
-            Provider::Ollama => "llama3.2",
-        }
-    }
-
-    pub fn supports_streaming(&self) -> bool {
-        true
-    }
-}
-
 impl Config {
     pub fn load() -> anyhow::Result<Self> {
         let config_path = Self::config_path()?;
