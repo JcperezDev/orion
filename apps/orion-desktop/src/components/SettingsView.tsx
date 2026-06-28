@@ -918,6 +918,9 @@ function LanguageSection() {
   return (
     <div>
       <SectionTitle>Language</SectionTitle>
+      <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: 12, lineHeight: 1.6 }}>
+        The interface is currently English-only. Your preference is saved for when UI translations land.
+      </p>
       <div
         className="rounded-lg"
         style={{ background: 'var(--bg-secondary)', border: '0.5px solid var(--border-subtle)', padding: '4px 8px' }}
@@ -961,7 +964,9 @@ function ShortcutsSection() {
     { keys: ['Enter'], desc: 'Send message' },
     { keys: ['Shift', 'Enter'], desc: 'New line in input' },
     { keys: ['Ctrl', 'N'], desc: 'New session' },
-    { keys: ['Ctrl', 'K'], desc: 'Search / command palette' },
+    { keys: ['Ctrl', 'K'], desc: 'Quick model switch' },
+    { keys: ['Tab'], desc: 'Autocomplete a slash command' },
+    { keys: ['Esc'], desc: 'Close a dialog / picker' },
   ]
   return (
     <div>
@@ -1016,17 +1021,60 @@ function MemorySection() {
   )
 }
 
+interface AgentSpecView {
+  id: string
+  name: string
+  mode: string
+  model: string
+  description: string
+  allowed_tools: string[]
+  denied_tools: string[]
+  color?: string | null
+}
+
 function AgentsSection() {
+  const [agents, setAgents] = useState<AgentSpecView[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    invoke<AgentSpecView[]>('list_agents')
+      .then(setAgents)
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
   return (
-    <PlaceholderSection
-      title="Agents"
-      description="Multi-agent system. Each agent has its own role, prompt and toolset."
-      bullets={[
-        'Default agent: orion-general',
-        'Plan agent: read-only research mode',
-        'Build agent: read-write execution mode',
-      ]}
-    />
+    <div>
+      <SectionTitle>Agents</SectionTitle>
+      <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: 14, lineHeight: 1.6 }}>
+        Built-in agents, each with its own role, system prompt and toolset. In the chat, switch the
+        primary agent with the <strong>Build / Plan / Agent</strong> buttons; subagents are invoked
+        automatically via the Task tool.
+      </p>
+      {loading && <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>Loading…</div>}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {agents.map(a => (
+          <div key={a.id} className="rounded-lg" style={{ background: 'var(--bg-secondary)', border: '0.5px solid var(--border-subtle)', padding: '13px 15px' }}>
+            <div className="flex items-center" style={{ gap: 8, marginBottom: 5 }}>
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: a.color || 'var(--accent)', flexShrink: 0 }} />
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{a.name}</span>
+              <span style={{ fontSize: 10, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-tertiary)', border: '0.5px solid var(--border-subtle)', borderRadius: 4, padding: '1px 6px' }}>{a.mode}</span>
+              <span style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: "'JetBrains Mono', monospace", marginLeft: 'auto' }}>{a.id}</span>
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: 8 }}>{a.description}</div>
+            <div className="flex" style={{ gap: 6, flexWrap: 'wrap' }}>
+              {a.denied_tools.length > 0
+                ? a.denied_tools.map(t => (
+                    <span key={t} style={{ fontSize: 10, fontFamily: "'JetBrains Mono', monospace", color: 'var(--red-text)', background: 'var(--red-bg)', border: '0.5px solid var(--red)', borderRadius: 5, padding: '1px 6px' }}>no {t}</span>
+                  ))
+                : (a.allowed_tools.length > 0 ? a.allowed_tools : ['all tools']).map(t => (
+                    <span key={t} style={{ fontSize: 10, fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-secondary)', background: 'var(--bg-tertiary)', border: '0.5px solid var(--border-subtle)', borderRadius: 5, padding: '1px 6px' }}>{t}</span>
+                  ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
   )
 }
 
@@ -1044,20 +1092,58 @@ function ServersSection() {
   )
 }
 
+interface PermRule { tool: string; pattern: string; action: string; learned: boolean }
+interface PermDefault { tool: string; action: string }
+
 function PermissionsSection() {
-  const [rules] = useState<Array<{ pattern: string; decision: 'allow' | 'deny' }>>([
-    { pattern: 'shell.run:git status', decision: 'allow' },
-    { pattern: 'shell.run:rm -rf *', decision: 'deny' },
-  ])
   const [fullAccess, setFullAccess] = useState(false)
   const [loadingFa, setLoadingFa] = useState(true)
+  const [defaults, setDefaults] = useState<PermDefault[]>([])
+  const [rules, setRules] = useState<PermRule[]>([])
+  // new-rule form
+  const [newTool, setNewTool] = useState('bash')
+  const [newPattern, setNewPattern] = useState('')
+  const [newAction, setNewAction] = useState<'allow' | 'ask' | 'deny'>('allow')
+
+  async function reload() {
+    try {
+      const p = await invoke<{ defaults: PermDefault[]; rules: PermRule[] }>('get_permissions')
+      setDefaults(p.defaults)
+      setRules(p.rules)
+    } catch {/* ignore */}
+  }
 
   useEffect(() => {
     invoke<boolean>('get_full_access')
       .then((v) => setFullAccess(v))
       .catch(() => {})
       .finally(() => setLoadingFa(false))
+    reload()
   }, [])
+
+  async function addRule() {
+    const pattern = newPattern.trim()
+    if (!pattern) return
+    try {
+      await invoke('add_permission_rule', { tool: newTool, pattern, action: newAction })
+      setNewPattern('')
+      reload()
+    } catch (e) { console.error('add rule failed:', e) }
+  }
+
+  async function removeRule(tool: string, pattern: string) {
+    try {
+      await invoke('remove_permission_rule', { tool, pattern })
+      reload()
+    } catch (e) { console.error('remove rule failed:', e) }
+  }
+
+  const actionColor = (a: string) =>
+    a === 'allow' ? 'var(--green-text)' : a === 'deny' ? 'var(--red-text)' : 'var(--text-secondary)'
+  const actionBg = (a: string) =>
+    a === 'allow' ? 'var(--green-bg)' : a === 'deny' ? 'var(--red-bg)' : 'var(--bg-tertiary)'
+  const actionBorder = (a: string) =>
+    a === 'allow' ? 'var(--green)' : a === 'deny' ? 'var(--red)' : 'var(--border-subtle)'
 
   const toggleFullAccess = async () => {
     const next = !fullAccess
@@ -1126,42 +1212,67 @@ function PermissionsSection() {
         </button>
       </div>
 
-      <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: 12 }}>
-        Tool calls matching these patterns are auto-approved or denied without prompting.
+      {/* Per-tool defaults (Trust Engine baseline) */}
+      <div style={{ fontSize: '11px', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-tertiary)', fontWeight: 600, margin: '4px 0 8px' }}>
+        Default policy per tool
+      </div>
+      <div className="rounded-lg" style={{ background: 'var(--bg-secondary)', border: '0.5px solid var(--border-subtle)', display: 'flex', flexWrap: 'wrap', gap: 6, padding: 12, marginBottom: 18 }}>
+        {defaults.length === 0 && <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>Loading…</span>}
+        {defaults.map(d => (
+          <span key={d.tool} style={{ fontSize: 11, fontFamily: "'JetBrains Mono', monospace", display: 'inline-flex', gap: 6, alignItems: 'center', padding: '3px 8px', borderRadius: 6, background: 'var(--bg-tertiary)', border: '0.5px solid var(--border-subtle)' }}>
+            <span style={{ color: 'var(--text-primary)' }}>{d.tool}</span>
+            <span style={{ color: actionColor(d.action) }}>{d.action}</span>
+          </span>
+        ))}
+      </div>
+
+      {/* Custom rules (config + learned "always allow") */}
+      <div style={{ fontSize: '11px', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-tertiary)', fontWeight: 600, margin: '4px 0 8px' }}>
+        Custom rules
+      </div>
+      <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: 10 }}>
+        Glob patterns auto-approved or denied without prompting (last match wins). For <code style={{ fontFamily: "'JetBrains Mono', monospace" }}>bash</code>, the pattern matches the command, e.g. <code style={{ fontFamily: "'JetBrains Mono', monospace" }}>git status*</code>.
       </p>
-      <div
-        className="rounded-lg"
-        style={{ background: 'var(--bg-secondary)', border: '0.5px solid var(--border-subtle)' }}
-      >
+
+      {/* Add-rule form */}
+      <div className="flex items-center" style={{ gap: 8, marginBottom: 10 }}>
+        <select value={newTool} onChange={e => setNewTool(e.target.value)} className="rounded-lg" style={{ background: 'var(--bg-secondary)', border: '0.5px solid var(--border-subtle)', color: 'var(--text-primary)', fontSize: 12, padding: '7px 8px' }}>
+          {(defaults.length ? defaults.map(d => d.tool) : ['bash', 'read', 'write', 'edit', 'grep', 'glob', 'webfetch', 'websearch']).map(t => <option key={t} value={t}>{t}</option>)}
+        </select>
+        <input
+          value={newPattern}
+          onChange={e => setNewPattern(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') addRule() }}
+          placeholder="pattern, e.g. git status*"
+          className="rounded-lg"
+          style={{ flex: 1, background: 'var(--bg-secondary)', border: '0.5px solid var(--border-subtle)', color: 'var(--text-primary)', fontSize: 12, padding: '7px 10px', fontFamily: "'JetBrains Mono', monospace" }}
+        />
+        <select value={newAction} onChange={e => setNewAction(e.target.value as 'allow' | 'ask' | 'deny')} className="rounded-lg" style={{ background: 'var(--bg-secondary)', border: '0.5px solid var(--border-subtle)', color: actionColor(newAction), fontSize: 12, padding: '7px 8px' }}>
+          <option value="allow">allow</option>
+          <option value="ask">ask</option>
+          <option value="deny">deny</option>
+        </select>
+        <button onClick={addRule} disabled={!newPattern.trim()} className="rounded-lg" style={{ border: 'none', background: 'var(--accent)', color: '#fff', fontSize: 12, padding: '7px 14px', cursor: newPattern.trim() ? 'pointer' : 'default', opacity: newPattern.trim() ? 1 : 0.5 }}>Add</button>
+      </div>
+
+      <div className="rounded-lg" style={{ background: 'var(--bg-secondary)', border: '0.5px solid var(--border-subtle)' }}>
         {rules.length === 0 ? (
-          <div className="text-center" style={{ padding: '24px 16px', color: 'var(--text-tertiary)', fontSize: '12px' }}>
-            No rules yet. Tool calls will prompt for approval by default.
+          <div className="text-center" style={{ padding: '20px 16px', color: 'var(--text-tertiary)', fontSize: '12px' }}>
+            No custom rules. The Trust Engine decides by risk/reversibility.
           </div>
         ) : (
           rules.map((r, i) => (
-            <div
-              key={i}
-              className="flex items-center justify-between"
-              style={{ padding: '11px 14px', borderBottom: i < rules.length - 1 ? '0.5px solid var(--border-subtle)' : 'none' }}
-            >
-              <code style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '12px', color: 'var(--text-primary)' }}>
-                {r.pattern}
+            <div key={`${r.tool}:${r.pattern}`} className="flex items-center justify-between" style={{ padding: '10px 14px', gap: 10, borderBottom: i < rules.length - 1 ? '0.5px solid var(--border-subtle)' : 'none' }}>
+              <code style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '12px', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <span style={{ color: 'var(--text-tertiary)' }}>{r.tool}:</span>{r.pattern}
+                {r.learned && <span style={{ marginLeft: 8, fontSize: 9, color: 'var(--text-tertiary)', border: '0.5px solid var(--border-subtle)', borderRadius: 4, padding: '1px 5px' }}>learned</span>}
               </code>
-              <span
-                style={{
-                  fontFamily: "'JetBrains Mono', monospace",
-                  fontSize: '10px',
-                  letterSpacing: '0.08em',
-                  textTransform: 'uppercase',
-                  color: r.decision === 'allow' ? 'var(--green-text)' : 'var(--red-text)',
-                  background: r.decision === 'allow' ? 'var(--green-bg)' : 'var(--red-bg)',
-                  border: `0.5px solid ${r.decision === 'allow' ? 'var(--green)' : 'var(--red)'}`,
-                  borderRadius: 20,
-                  padding: '2px 8px',
-                }}
-              >
-                {r.decision}
-              </span>
+              <div className="flex items-center" style={{ gap: 8, flexShrink: 0 }}>
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '10px', letterSpacing: '0.08em', textTransform: 'uppercase', color: actionColor(r.action), background: actionBg(r.action), border: `0.5px solid ${actionBorder(r.action)}`, borderRadius: 20, padding: '2px 8px' }}>
+                  {r.action}
+                </span>
+                <button onClick={() => removeRule(r.tool, r.pattern)} aria-label="Delete rule" title="Delete rule" style={{ border: 'none', background: 'transparent', color: 'var(--text-tertiary)', cursor: 'pointer', fontSize: 13, padding: '2px 4px' }}>✕</button>
+              </div>
             </div>
           ))
         )}

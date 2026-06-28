@@ -95,8 +95,13 @@ export default function ChatView() {
         .then(s => { if (s) setActiveSession(s) })
         .catch(() => {})
     }
+    const onOpenPicker = () => setPickerOpen(true)
     window.addEventListener('orion:session', onSessionChange)
-    return () => window.removeEventListener('orion:session', onSessionChange)
+    window.addEventListener('orion:open-model-picker', onOpenPicker)
+    return () => {
+      window.removeEventListener('orion:session', onSessionChange)
+      window.removeEventListener('orion:open-model-picker', onOpenPicker)
+    }
   }, [])
 
   // Load active model + context_window whenever session becomes available or model changes

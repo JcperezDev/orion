@@ -58,6 +58,14 @@ export default function App() {
       } else if (e.key === ',' && (e.ctrlKey || e.metaKey)) {
         e.preventDefault()
         setActiveView(v => v === 'settings' ? 'chat' : 'settings')
+      } else if ((e.key === 'n' || e.key === 'N') && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault()
+        setActiveView('chat')
+        window.dispatchEvent(new CustomEvent('orion:new-session'))
+      } else if ((e.key === 'k' || e.key === 'K') && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault()
+        setActiveView('chat')
+        window.dispatchEvent(new CustomEvent('orion:open-model-picker'))
       }
     }
     window.addEventListener('keydown', onKey)
@@ -69,6 +77,18 @@ export default function App() {
     const onOpen = () => setActiveView('settings')
     window.addEventListener('orion:open-settings', onOpen)
     return () => window.removeEventListener('orion:open-settings', onOpen)
+  }, [])
+
+  // Select-to-copy: copy any selected text to the clipboard automatically.
+  useEffect(() => {
+    const onMouseUp = () => {
+      const sel = window.getSelection()?.toString() ?? ''
+      if (sel.trim().length > 0) {
+        navigator.clipboard?.writeText(sel).catch(() => {})
+      }
+    }
+    document.addEventListener('mouseup', onMouseUp)
+    return () => document.removeEventListener('mouseup', onMouseUp)
   }, [])
 
   async function checkOnboarding() {

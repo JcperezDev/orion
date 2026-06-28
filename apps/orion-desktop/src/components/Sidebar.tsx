@@ -110,6 +110,14 @@ export default function Sidebar({ onOpenSettings, workspaceName, workspacePath }
     window.dispatchEvent(new CustomEvent('orion:session', { detail: id }))
   }
 
+  // Ctrl+N → new session (from the global shortcut).
+  useEffect(() => {
+    const onNew = () => { handleNewSession() }
+    window.addEventListener('orion:new-session', onNew)
+    return () => window.removeEventListener('orion:new-session', onNew)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   async function handleNewSession() {
     try {
       const session = await invoke<Session>('create_session', { title: 'New session' })

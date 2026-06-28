@@ -85,6 +85,15 @@ impl LearnedStore {
         Ok(())
     }
 
+    /// Remove a learned rule for a project.
+    pub fn remove(&self, project: &Path, tool: &str, pattern: &str) -> Result<()> {
+        self.conn.lock().execute(
+            "DELETE FROM learned_permissions WHERE project_path = ?1 AND tool = ?2 AND pattern = ?3",
+            params![canon(project), tool, pattern],
+        )?;
+        Ok(())
+    }
+
     /// List `(tool, pattern, action)` rules saved for a project.
     pub fn list(&self, project: &Path) -> Result<Vec<(String, String, Action)>> {
         let conn = self.conn.lock();

@@ -143,21 +143,32 @@ impl PermissionEngine {
             .compile_matcher();
         {
             let mut cfg = self.config.write().unwrap();
-            cfg.rules
-                .entry(tool.to_string())
-                .or_default()
-                .push(Rule {
-                    pattern: pattern.to_string(),
-                    action,
-                });
+            let rules = cfg.rules.entry(tool.to_string()).or_default();
+            // Replace an existing rule with the same pattern rather than dup it.
+            rules.retain(|r| r.pattern != pattern);
+            rules.push(Rule { pattern: pattern.to_string(), action });
         }
-        self.matchers
-            .write()
-            .unwrap()
-            .entry(tool.to_string())
-            .or_default()
-            .push((glob, action));
+        {
+            let mut matchers = self.matchers.write().unwrap();
+            let list = matchers.entry(tool.to_string()).or_default();
+            list.retain(|(g, _)| g.glob().glob() != pattern);
+            list.push((glob, action));
+        }
         Ok(())
+    }
+
+    /// Remove a rule by (tool, pattern). Returns true if one was removed.
+    pub fn remove_rule(&self, tool: &str, pattern: &str) -> bool {
+        let mut removed = false;
+        if let Some(rules) = self.config.write().unwrap().rules.get_mut(tool) {
+            let before = rules.len();
+            rules.retain(|r| r.pattern != pattern);
+            removed = rules.len() != before;
+        }
+        if let Some(list) = self.matchers.write().unwrap().get_mut(tool) {
+            list.retain(|(g, _)| g.glob().glob() != pattern);
+        }
+        removed
     }
 
     pub fn snapshot(&self) -> PermissionConfig {

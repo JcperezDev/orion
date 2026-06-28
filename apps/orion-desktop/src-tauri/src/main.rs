@@ -827,13 +827,117 @@ fn add_permission_rule(
     pattern: String,
     action: String,
 ) -> Result<(), String> {
-    let act = match action.as_str() {
-        "allow" => PermissionAction::Allow,
-        "ask" => PermissionAction::Ask,
-        "deny" => PermissionAction::Deny,
-        _ => return Err(format!("unknown action: {action}")),
-    };
-    state.permissions.add_rule(&tool, &pattern, act)
+    let act = parse_permission_action(&action)?;
+    state.permissions.add_rule(&tool, &pattern, act)?;
+    // Persist so it survives restarts and shows up in Settings.
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    if let Ok(store) = orion_core::LearnedStore::open() {
+        let _ = store.add(&cwd, &tool, &pattern, act);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn remove_permission_rule(
+    state: State<'_, AppState>,
+    tool: String,
+    pattern: String,
+) -> Result<(), String> {
+    state.permissions.remove_rule(&tool, &pattern);
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    if let Ok(store) = orion_core::LearnedStore::open() {
+        let _ = store.remove(&cwd, &tool, &pattern);
+    }
+    Ok(())
+}
+
+fn parse_permission_action(action: &str) -> Result<PermissionAction, String> {
+    match action {
+        "allow" => Ok(PermissionAction::Allow),
+        "ask" => Ok(PermissionAction::Ask),
+        "deny" => Ok(PermissionAction::Deny),
+        _ => Err(format!("unknown action: {action}")),
+    }
+}
+
+fn permission_action_str(a: PermissionAction) -> &'static str {
+    match a {
+        PermissionAction::Allow => "allow",
+        PermissionAction::Ask => "ask",
+        PermissionAction::Deny => "deny",
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct PermissionRuleDto {
+    pub tool: String,
+    pub pattern: String,
+    pub action: String,
+    pub learned: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PermissionDefaultDto {
+    pub tool: String,
+    pub action: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PermissionsDto {
+    pub defaults: Vec<PermissionDefaultDto>,
+    pub rules: Vec<PermissionRuleDto>,
+}
+
+/// List the built-in agents (role, mode, tools) for the Agents settings page.
+#[tauri::command]
+fn list_agents() -> Vec<orion_core::agents::AgentSpec> {
+    orion_core::agents::AgentRegistry::with_builtins()
+        .list_visible()
+        .into_iter()
+        .cloned()
+        .collect()
+}
+
+/// Return the Trust Engine's per-tool defaults and the configured/learned rules.
+#[tauri::command]
+fn get_permissions(state: State<'_, AppState>) -> PermissionsDto {
+    let cfg = state.permissions.snapshot();
+    let mut defaults: Vec<PermissionDefaultDto> = cfg
+        .defaults
+        .iter()
+        .map(|(t, a)| PermissionDefaultDto { tool: t.clone(), action: permission_action_str(*a).into() })
+        .collect();
+    defaults.sort_by(|a, b| a.tool.cmp(&b.tool));
+
+    let mut rules: Vec<PermissionRuleDto> = Vec::new();
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    if let Ok(store) = orion_core::LearnedStore::open() {
+        if let Ok(list) = store.list(&cwd) {
+            for (tool, pattern, action) in list {
+                rules.push(PermissionRuleDto {
+                    tool,
+                    pattern,
+                    action: permission_action_str(action).into(),
+                    learned: true,
+                });
+            }
+        }
+    }
+    for (tool, rs) in &cfg.rules {
+        for r in rs {
+            if rules.iter().any(|x| &x.tool == tool && x.pattern == r.pattern) {
+                continue;
+            }
+            rules.push(PermissionRuleDto {
+                tool: tool.clone(),
+                pattern: r.pattern.clone(),
+                action: permission_action_str(r.action).into(),
+                learned: false,
+            });
+        }
+    }
+    rules.sort_by(|a, b| (a.tool.clone(), a.pattern.clone()).cmp(&(b.tool.clone(), b.pattern.clone())));
+    PermissionsDto { defaults, rules }
 }
 
 /// Undo a reversible edit: restore each target to its pre-edit content (or
@@ -1035,6 +1139,9 @@ fn main() {
             get_messages,
             list_tools,
             add_permission_rule,
+            remove_permission_rule,
+            get_permissions,
+            list_agents,
             get_full_access,
             set_full_access,
             undo_changes,
